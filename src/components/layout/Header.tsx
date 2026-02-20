@@ -1,7 +1,6 @@
 'use client'
 
 import Link from 'next/link'
-import Image from 'next/image'
 import { useSession, signOut } from 'next-auth/react'
 import { Button } from '@/components/ui/button'
 import { useState } from 'react'
@@ -78,11 +77,9 @@ export function Header() {
                 <div className="flex items-center space-x-4">
                   <div className="h-8 w-8 overflow-hidden rounded-full border border-gray-200 bg-gray-100">
                     {session.user.image ? (
-                      <Image
+                      <img
                         src="/api/users/me/avatar"
                         alt="Profile"
-                        width={32}
-                        height={32}
                         className="h-full w-full object-cover"
                       />
                     ) : (

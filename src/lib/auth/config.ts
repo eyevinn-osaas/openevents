@@ -106,7 +106,6 @@ export const authOptions: NextAuthOptions = {
         token.emailVerified = user.emailVerified
         token.name = user.name
         token.email = user.email
-        token.picture = user.image || null
       }
 
       // Handle session updates
@@ -121,7 +120,6 @@ export const authOptions: NextAuthOptions = {
           token.roles = dbUser.roles.map((r) => r.role)
           token.email = dbUser.email
           token.name = `${dbUser.firstName || ''} ${dbUser.lastName || ''}`.trim() || null
-          token.picture = dbUser.image || null
         }
       }
 
@@ -130,12 +128,11 @@ export const authOptions: NextAuthOptions = {
     async session({ session, token }) {
       if (token) {
         session.user.id = token.id
-        session.user.image = token.image
         session.user.roles = token.roles
         session.user.emailVerified = token.emailVerified
         session.user.email = token.email as string
         session.user.name = (token.name as string | null) || null
-        session.user.image = (token.picture as string | null) || null
+        session.user.image = token.image ?? null
       }
       return session
     },
