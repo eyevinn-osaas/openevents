@@ -24,6 +24,7 @@ export default async function CheckoutPage({ params }: CheckoutPageProps) {
       city: true,
       country: true,
       onlineUrl: true,
+      coverImage: true,
       status: true,
     },
   })
@@ -39,22 +40,27 @@ export default async function CheckoutPage({ params }: CheckoutPageProps) {
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-10 sm:px-6 lg:px-8">
-      <div className="mb-6 space-y-2">
-        <h1 className="text-2xl font-bold text-gray-900">Checkout</h1>
-        <p className="text-gray-600">{event.title}</p>
-      </div>
+      <h1 className="text-2xl font-bold text-gray-900 mb-6">Checkout</h1>
 
       <Card className="mb-6">
-        <CardContent className="p-4 text-sm text-gray-700">
-          <p>
-            <span className="font-medium text-gray-900">Starts:</span> {formatDateTime(event.startDate)}
-          </p>
-          <p>
-            <span className="font-medium text-gray-900">Ends:</span> {formatDateTime(event.endDate)}
-          </p>
-          <p>
-            <span className="font-medium text-gray-900">Location:</span> {location}
-          </p>
+        <CardContent className="p-4 flex flex-row items-stretch justify-between gap-4">
+          <div className="flex flex-col gap-2 min-w-0">
+            <p className="font-bold text-base text-black leading-tight">{event.title}</p>
+            <p className="text-sm text-gray-700 leading-snug">{location}</p>
+            <p className="text-sm text-gray-700">
+              {formatDateTime(event.startDate, { timeZoneName: 'short' })}
+            </p>
+          </div>
+          <div className="h-24 w-44 rounded-[10px] overflow-hidden flex-shrink-0 bg-gradient-to-r from-blue-500 to-indigo-600">
+            {event.coverImage && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={`/api/events/${encodeURIComponent(event.slug)}/image?slot=cover`}
+                alt={event.title}
+                className="h-full w-full object-cover"
+              />
+            )}
+          </div>
         </CardContent>
       </Card>
 
