@@ -1,15 +1,37 @@
 'use client'
 
-import { ChangeEvent, useEffect, useMemo, useRef, useState } from 'react'
+import Cropper, { Area } from 'react-easy-crop'
+import { ChangeEvent, ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
+import { FloatingToast } from '@/components/ui/floating-toast'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { DEFAULT_CURRENCY, SUPPORTED_CURRENCIES, isSupportedCurrency } from '@/lib/constants/currencies'
+import {
+  convertDateTimeLocalBetweenTimeZones,
+  dateTimeLocalInTimeZoneToUtcIso,
+  formatUtcInTimeZoneForInput,
+  isValidTimeZone,
+} from '@/lib/timezone'
 
 type EventFormMode = 'create' | 'edit'
+type ImageTargetField = 'coverImage' | 'bottomImage'
+type TicketTypeFieldKey = 'name' | 'price' | 'currency' | 'capacity'
+type TicketTypeFieldErrors = Partial<Record<TicketTypeFieldKey, string>>
+
+type TicketTypeDraft = {
+  id?: string
+  name: string
+  price: string
+  currency: string
+  capacity: string
+}
 
 type EventFormData = {
   id?: string
+  slug?: string
+  ticketTypes?: TicketTypeDraft[]
   ticketTypeId?: string
   ticketTypeName?: string
   ticketPrice?: string
@@ -42,13 +64,43 @@ type EventFormData = {
 type EventFormProps = {
   mode: EventFormMode
   initialData?: EventFormData
+  children?: ReactNode
+}
+
+type FieldKey =
+  | 'title'
+  | 'description'
+  | 'startDate'
+  | 'endDate'
+  | 'timezone'
+  | 'venue'
+  | 'address'
+  | 'city'
+  | 'country'
+  | 'onlineUrl'
+  | 'coverImage'
+  | 'bottomImage'
+
+type FieldErrors = Partial<Record<FieldKey, string>>
+
+type CropSession = {
+  targetField: ImageTargetField
+  sourceUrl: string
+  fileName: string
+  mimeType: string
 }
 
 const fallbackInitialData: EventFormData = {
+  ticketTypes: [{
+    name: 'General Admission',
+    price: '0',
+    currency: DEFAULT_CURRENCY,
+    capacity: '',
+  }],
   ticketTypeId: '',
   ticketTypeName: 'General Admission',
   ticketPrice: '0',
-  ticketCurrency: 'SEK',
+  ticketCurrency: DEFAULT_CURRENCY,
   ticketCapacity: '',
   title: '',
   description: '',
@@ -74,16 +126,37 @@ const fallbackInitialData: EventFormData = {
   categoryIds: [],
 }
 
-function toDateTimeLocalString(value?: string | null) {
-  if (!value) return ''
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return ''
-  const offset = date.getTimezoneOffset()
-  const localDate = new Date(date.getTime() - offset * 60000)
-  return localDate.toISOString().slice(0, 16)
-}
-
 const allowedImageMimeTypes = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif'])
+
+const fieldOrder: FieldKey[] = [
+  'title',
+  'startDate',
+  'endDate',
+  'timezone',
+  'venue',
+  'address',
+  'city',
+  'country',
+  'onlineUrl',
+  'description',
+  'coverImage',
+  'bottomImage',
+]
+
+const ticketFieldOrder: TicketTypeFieldKey[] = ['name', 'price', 'currency', 'capacity']
+
+const commonTimezones = [
+  'UTC',
+  'Europe/Stockholm',
+  'Europe/London',
+  'Europe/Berlin',
+  'America/New_York',
+  'America/Chicago',
+  'America/Denver',
+  'America/Los_Angeles',
+  'Asia/Tokyo',
+  'Asia/Dubai',
+]
 
 function parseNameList(raw?: string | null): string[] {
   return (raw || '')
@@ -99,33 +172,376 @@ function parseTicketPrice(raw?: string): number | null {
   return parsed
 }
 
-export function EventForm({ mode, initialData }: EventFormProps) {
+function normalizeTicketCurrency(raw?: string) {
+  return (raw || DEFAULT_CURRENCY).trim().toUpperCase()
+}
+
+function normalizeTicketDraft(ticket?: Partial<TicketTypeDraft>): TicketTypeDraft {
+  return {
+    id: ticket?.id,
+    name: ticket?.name || '',
+    price: ticket?.price || '0',
+    currency: normalizeTicketCurrency(ticket?.currency),
+    capacity: ticket?.capacity || '',
+  }
+}
+
+function hasAnyTicketInput(ticket: TicketTypeDraft) {
+  return (
+    Boolean(ticket.id) ||
+    Boolean(ticket.name.trim()) ||
+    Boolean(ticket.price.trim()) ||
+    Boolean(ticket.capacity.trim())
+  )
+}
+
+function createEmptyTicketType() {
+  return normalizeTicketDraft()
+}
+
+function parseFirstFieldError(details: unknown, key: string) {
+  if (!details || typeof details !== 'object') return null
+
+  const detailsRecord = details as Record<string, unknown>
+  const fieldErrors = detailsRecord.fieldErrors
+  if (!fieldErrors || typeof fieldErrors !== 'object') return null
+
+  const value = (fieldErrors as Record<string, unknown>)[key]
+  if (!Array.isArray(value) || value.length < 1) return null
+
+  const firstError = value[0]
+  return typeof firstError === 'string' ? firstError : null
+}
+
+function parseApiValidationErrors(details: unknown): FieldErrors {
+  if (!details || typeof details !== 'object') return {}
+
+  const mapped: FieldErrors = {}
+  const record = details as Record<string, unknown>
+
+  for (const key of fieldOrder) {
+    const value = record[key]
+    if (Array.isArray(value) && typeof value[0] === 'string') {
+      mapped[key] = value[0]
+    }
+  }
+
+  return mapped
+}
+
+function parsePublishIssueFieldErrors(details: unknown): FieldErrors {
+  if (!Array.isArray(details)) return {}
+
+  const fieldMap: Record<string, FieldKey> = {
+    Title: 'title',
+    Start: 'startDate',
+    End: 'endDate',
+    Timezone: 'timezone',
+    Venue: 'venue',
+    Address: 'address',
+    City: 'city',
+    Country: 'country',
+    'Online URL': 'onlineUrl',
+    Description: 'description',
+  }
+
+  const nextFieldErrors: FieldErrors = {}
+
+  for (const issue of details) {
+    if (!issue || typeof issue !== 'object') continue
+    const issueRecord = issue as Record<string, unknown>
+    const field = issueRecord.field
+    const message = issueRecord.message
+    if (typeof field !== 'string' || typeof message !== 'string') continue
+
+    const mappedField = fieldMap[field]
+    if (mappedField && !nextFieldErrors[mappedField]) {
+      nextFieldErrors[mappedField] = message
+    }
+  }
+
+  return nextFieldErrors
+}
+
+function focusFieldById(id: string) {
+  requestAnimationFrame(() => {
+    const element = document.getElementById(id)
+    if (!element) return
+    element.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    if (element instanceof HTMLInputElement || element instanceof HTMLSelectElement || element instanceof HTMLTextAreaElement) {
+      element.focus()
+    }
+  })
+}
+
+function focusFirstInvalidField(fieldErrors: FieldErrors, ticketErrors: TicketTypeFieldErrors[]) {
+  const first = fieldOrder.find((key) => Boolean(fieldErrors[key]))
+  if (first) {
+    focusFieldById(first)
+    return
+  }
+
+  for (let index = 0; index < ticketErrors.length; index += 1) {
+    const rowErrors = ticketErrors[index]
+    const firstTicketField = ticketFieldOrder.find((key) => Boolean(rowErrors[key]))
+    if (firstTicketField) {
+      if (firstTicketField === 'name') {
+        focusFieldById(`ticketTypeName-${index}`)
+      } else if (firstTicketField === 'price') {
+        focusFieldById(`ticketPrice-${index}`)
+      } else if (firstTicketField === 'currency') {
+        focusFieldById(`ticketCurrency-${index}`)
+      } else {
+        focusFieldById(`ticketCapacity-${index}`)
+      }
+      return
+    }
+  }
+}
+
+function loadTimezoneOptions(initialTimeZone: string) {
+  const localZone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
+  const dynamicTimezones = typeof Intl.supportedValuesOf === 'function'
+    ? Intl.supportedValuesOf('timeZone')
+    : []
+
+  return Array.from(
+    new Set([
+      ...commonTimezones,
+      ...dynamicTimezones,
+      localZone,
+      initialTimeZone,
+    ].filter(Boolean))
+  )
+}
+
+async function loadImage(src: string) {
+  return new Promise<HTMLImageElement>((resolve, reject) => {
+    const image = new Image()
+    image.onload = () => resolve(image)
+    image.onerror = () => reject(new Error('Failed to load image for cropping'))
+    image.src = src
+  })
+}
+
+async function cropImageToFile(params: {
+  sourceUrl: string
+  cropPixels: Area
+  fileName: string
+  mimeType: string
+}) {
+  const image = await loadImage(params.sourceUrl)
+  const canvas = document.createElement('canvas')
+  canvas.width = Math.max(1, Math.round(params.cropPixels.width))
+  canvas.height = Math.max(1, Math.round(params.cropPixels.height))
+
+  const context = canvas.getContext('2d')
+  if (!context) throw new Error('Unable to edit this image')
+
+  context.drawImage(
+    image,
+    params.cropPixels.x,
+    params.cropPixels.y,
+    params.cropPixels.width,
+    params.cropPixels.height,
+    0,
+    0,
+    canvas.width,
+    canvas.height
+  )
+
+  const outputMimeType = allowedImageMimeTypes.has(params.mimeType) ? params.mimeType : 'image/jpeg'
+  const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, outputMimeType, 0.92))
+  if (!blob) throw new Error('Failed to apply crop')
+
+  return new File([blob], params.fileName, { type: outputMimeType })
+}
+
+function createFileNameFromMimeType(targetField: ImageTargetField, mimeType: string) {
+  const extension = mimeType.split('/')[1] || 'jpg'
+  const prefix = targetField === 'coverImage' ? 'cover' : 'bottom'
+  return `${prefix}.${extension}`
+}
+
+function buildSnapshot(form: EventFormData) {
+  return JSON.stringify({
+    title: form.title,
+    description: form.description || '',
+    startDate: form.startDate,
+    endDate: form.endDate,
+    timezone: form.timezone,
+    locationType: form.locationType,
+    venue: form.venue || '',
+    address: form.address || '',
+    city: form.city || '',
+    state: form.state || '',
+    country: form.country || '',
+    postalCode: form.postalCode || '',
+    onlineUrl: form.onlineUrl || '',
+    ticketTypes: (form.ticketTypes || []).map((ticket) => ({
+      id: ticket.id || '',
+      name: ticket.name.trim(),
+      price: ticket.price.trim(),
+      currency: normalizeTicketCurrency(ticket.currency),
+      capacity: ticket.capacity.trim(),
+    })),
+    speakerNames: form.speakerNames || '',
+    organizerNames: form.organizerNames || '',
+    sponsorNames: form.sponsorNames || '',
+    visibility: form.visibility,
+    cancellationDeadlineHours: form.cancellationDeadlineHours,
+    categoryIds: form.categoryIds || [],
+    coverImage: form.coverImage || '',
+    bottomImage: form.bottomImage || '',
+  })
+}
+
+export function EventForm({ mode, initialData, children }: EventFormProps) {
   const router = useRouter()
   const bannerInputRef = useRef<HTMLInputElement | null>(null)
   const bottomInputRef = useRef<HTMLInputElement | null>(null)
   const bannerObjectUrlRef = useRef<string | null>(null)
   const bottomObjectUrlRef = useRef<string | null>(null)
+  const cropObjectUrlRef = useRef<string | null>(null)
+
   const mergedInitialData = useMemo(() => ({ ...fallbackInitialData, ...initialData }), [initialData])
 
-  const [form, setForm] = useState<EventFormData>({
-    ...mergedInitialData,
-    startDate: toDateTimeLocalString(mergedInitialData.startDate),
-    endDate: toDateTimeLocalString(mergedInitialData.endDate),
-  })
+  const normalizedInitialTimezone = isValidTimeZone(mergedInitialData.timezone)
+    ? mergedInitialData.timezone
+    : 'UTC'
 
+  const initialTicketTypes = useMemo(() => {
+    if (mergedInitialData.ticketTypes && mergedInitialData.ticketTypes.length > 0) {
+      return mergedInitialData.ticketTypes.map((ticket) => normalizeTicketDraft(ticket))
+    }
+
+    return [normalizeTicketDraft({
+      id: mergedInitialData.ticketTypeId,
+      name: mergedInitialData.ticketTypeName,
+      price: mergedInitialData.ticketPrice,
+      currency: mergedInitialData.ticketCurrency,
+      capacity: mergedInitialData.ticketCapacity,
+    })]
+  }, [mergedInitialData])
+
+  const initialFormState = useMemo<EventFormData>(() => ({
+    ...mergedInitialData,
+    timezone: normalizedInitialTimezone,
+    description: mergedInitialData.description || mergedInitialData.descriptionHtml || '',
+    startDate: formatUtcInTimeZoneForInput(mergedInitialData.startDate, normalizedInitialTimezone),
+    endDate: formatUtcInTimeZoneForInput(mergedInitialData.endDate, normalizedInitialTimezone),
+    ticketTypes: initialTicketTypes,
+    ticketCurrency: normalizeTicketCurrency(mergedInitialData.ticketCurrency),
+  }), [initialTicketTypes, mergedInitialData, normalizedInitialTimezone])
+
+  const initialSnapshotRef = useRef(buildSnapshot(initialFormState))
+
+  const [form, setForm] = useState<EventFormData>(initialFormState)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isUploadingBanner, setIsUploadingBanner] = useState(false)
   const [isUploadingBottom, setIsUploadingBottom] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [isPreparingCrop, setIsPreparingCrop] = useState<ImageTargetField | null>(null)
+  const [isApplyingCrop, setIsApplyingCrop] = useState(false)
+  const [fieldErrors, setFieldErrors] = useState<FieldErrors>({})
+  const [ticketErrors, setTicketErrors] = useState<TicketTypeFieldErrors[]>(
+    initialTicketTypes.map(() => ({}))
+  )
+  const [generalErrors, setGeneralErrors] = useState<string[]>([])
+  const [submitError, setSubmitError] = useState<string | null>(null)
+  const [toast, setToast] = useState<{ message: string; tone: 'success' | 'error' } | null>(null)
   const [bannerPreviewSrc, setBannerPreviewSrc] = useState<string | null>(null)
   const [bottomPreviewSrc, setBottomPreviewSrc] = useState<string | null>(null)
   const [imageVersion, setImageVersion] = useState(0)
+  const [cropSession, setCropSession] = useState<CropSession | null>(null)
+  const [cropPosition, setCropPosition] = useState({ x: 0, y: 0 })
+  const [cropZoom, setCropZoom] = useState(1)
+  const [cropPixels, setCropPixels] = useState<Area | null>(null)
+  const [originalImageFiles, setOriginalImageFiles] = useState<Record<ImageTargetField, File | null>>({
+    coverImage: null,
+    bottomImage: null,
+  })
+  const [croppedImageFiles, setCroppedImageFiles] = useState<Record<ImageTargetField, File | null>>({
+    coverImage: null,
+    bottomImage: null,
+  })
+  const [editableImageFiles, setEditableImageFiles] = useState<Record<ImageTargetField, File | null>>({
+    coverImage: null,
+    bottomImage: null,
+  })
+  const persistedTicketTypeIdsRef = useRef(
+    new Set(initialTicketTypes.map((ticket) => ticket.id).filter((ticketId): ticketId is string => Boolean(ticketId)))
+  )
+
+  const timezoneOptions = useMemo(() => loadTimezoneOptions(normalizedInitialTimezone), [normalizedInitialTimezone])
+
+  const clearFieldError = (key: FieldKey) => {
+    setFieldErrors((current) => {
+      if (!current[key]) return current
+      const next = { ...current }
+      delete next[key]
+      return next
+    })
+  }
 
   const updateField = <K extends keyof EventFormData>(key: K, value: EventFormData[K]) => {
     setForm((current) => ({ ...current, [key]: value }))
+    if (key in fieldErrors) {
+      clearFieldError(key as FieldKey)
+    }
   }
 
-  function cleanupObjectUrl(targetField: 'coverImage' | 'bottomImage') {
+  const clearTicketError = (index: number, key: TicketTypeFieldKey) => {
+    setTicketErrors((current) => {
+      if (!current[index]?.[key]) return current
+      const next = current.map((errors) => ({ ...errors }))
+      delete next[index][key]
+      return next
+    })
+  }
+
+  const updateTicketTypeField = (index: number, key: TicketTypeFieldKey, value: string) => {
+    setForm((current) => {
+      const nextTicketTypes = [...(current.ticketTypes || [])]
+      if (!nextTicketTypes[index]) return current
+
+      nextTicketTypes[index] = {
+        ...nextTicketTypes[index],
+        [key]: key === 'currency' ? normalizeTicketCurrency(value) : value,
+      }
+
+      return {
+        ...current,
+        ticketTypes: nextTicketTypes,
+      }
+    })
+    clearTicketError(index, key)
+  }
+
+  const addTicketType = () => {
+    setForm((current) => ({
+      ...current,
+      ticketTypes: [...(current.ticketTypes || []), createEmptyTicketType()],
+    }))
+    setTicketErrors((current) => [...current, {}])
+    setSubmitError(null)
+  }
+
+  const removeTicketType = (index: number) => {
+    const ticket = form.ticketTypes?.[index]
+    if (!ticket) return
+
+    if (ticket.id && !window.confirm('Remove this ticket type?')) {
+      return
+    }
+
+    setForm((current) => ({
+      ...current,
+      ticketTypes: (current.ticketTypes || []).filter((_, ticketIndex) => ticketIndex !== index),
+    }))
+    setTicketErrors((current) => current.filter((_, ticketIndex) => ticketIndex !== index))
+  }
+
+  function cleanupObjectUrl(targetField: ImageTargetField) {
     if (targetField === 'coverImage') {
       if (bannerObjectUrlRef.current) {
         URL.revokeObjectURL(bannerObjectUrlRef.current)
@@ -140,7 +556,14 @@ export function EventForm({ mode, initialData }: EventFormProps) {
     }
   }
 
-  function setLocalPreview(file: File, targetField: 'coverImage' | 'bottomImage') {
+  function cleanupCropObjectUrl() {
+    if (cropObjectUrlRef.current) {
+      URL.revokeObjectURL(cropObjectUrlRef.current)
+      cropObjectUrlRef.current = null
+    }
+  }
+
+  function setLocalPreview(file: File, targetField: ImageTargetField) {
     const objectUrl = URL.createObjectURL(file)
     cleanupObjectUrl(targetField)
 
@@ -162,10 +585,39 @@ export function EventForm({ mode, initialData }: EventFormProps) {
       if (bottomObjectUrlRef.current) {
         URL.revokeObjectURL(bottomObjectUrlRef.current)
       }
+      if (cropObjectUrlRef.current) {
+        URL.revokeObjectURL(cropObjectUrlRef.current)
+      }
     }
   }, [])
 
-  async function uploadEventImage(file: File, targetField: 'coverImage' | 'bottomImage') {
+  function openCropper(file: File, targetField: ImageTargetField) {
+    cleanupCropObjectUrl()
+    const sourceUrl = URL.createObjectURL(file)
+    cropObjectUrlRef.current = sourceUrl
+
+    setCropSession({
+      targetField,
+      sourceUrl,
+      fileName: file.name,
+      mimeType: file.type,
+    })
+    setCropPosition({ x: 0, y: 0 })
+    setCropZoom(1)
+    setCropPixels(null)
+    clearFieldError(targetField)
+    setSubmitError(null)
+  }
+
+  function closeCropper() {
+    setCropSession(null)
+    setCropPosition({ x: 0, y: 0 })
+    setCropZoom(1)
+    setCropPixels(null)
+    cleanupCropObjectUrl()
+  }
+
+  async function uploadEventImage(file: File, targetField: ImageTargetField) {
     if (!form.id && mode === 'edit') {
       throw new Error('Save the event once before uploading images')
     }
@@ -209,114 +661,349 @@ export function EventForm({ mode, initialData }: EventFormProps) {
     updateField(targetField, publicUrl)
   }
 
-  async function upsertPrimaryTicketType(eventId: string, requireComplete: boolean) {
-    const ticketName = (form.ticketTypeName || '').trim()
-    const ticketPrice = parseTicketPrice(form.ticketPrice)
-    const normalizedCurrency = (form.ticketCurrency || 'SEK').trim().toUpperCase()
-    const capacityRaw = (form.ticketCapacity || '').trim()
-    const maxCapacity = capacityRaw ? Number(capacityRaw) : null
+  function parseTicketValidationErrors(details: unknown, index: number): TicketTypeFieldErrors | null {
+    const nextErrors: TicketTypeFieldErrors = {}
+    const nameError = parseFirstFieldError(details, 'name')
+    const priceError = parseFirstFieldError(details, 'price')
+    const currencyError = parseFirstFieldError(details, 'currency')
+    const capacityError = parseFirstFieldError(details, 'maxCapacity')
 
-    if (requireComplete && !ticketName) {
-      throw new Error('Tickets -> Ticket Name: Enter a ticket name.')
-    }
+    if (nameError) nextErrors.name = nameError
+    if (priceError) nextErrors.price = priceError
+    if (currencyError) nextErrors.currency = currencyError
+    if (capacityError) nextErrors.capacity = capacityError
 
-    if (requireComplete && (ticketPrice === null || ticketPrice < 0)) {
-      throw new Error('Tickets -> Ticket Price: Enter a valid price (0 or greater).')
-    }
+    if (Object.keys(nextErrors).length === 0) return null
 
-    if (requireComplete && !normalizedCurrency) {
-      throw new Error('Tickets -> Currency: Enter a currency code (for example SEK).')
-    }
-
-    if (!requireComplete) {
-      const hasAnyTicketInput =
-        Boolean(form.ticketTypeId) ||
-        Boolean(ticketName) ||
-        Boolean((form.ticketPrice || '').trim()) ||
-        Boolean((form.ticketCurrency || '').trim()) ||
-        Boolean(capacityRaw)
-
-      if (!hasAnyTicketInput) return
-      if (!ticketName || ticketPrice === null || !normalizedCurrency) return
-    }
-
-    if (maxCapacity !== null && (!Number.isInteger(maxCapacity) || maxCapacity < 1)) {
-      throw new Error('Tickets -> Capacity: Enter a whole number greater than 0, or leave empty.')
-    }
-
-    const payload = {
-      name: ticketName,
-      price: ticketPrice,
-      currency: normalizedCurrency,
-      maxCapacity,
-      isVisible: true,
-      minPerOrder: 1,
-      maxPerOrder: 10,
-      sortOrder: 0,
-    }
-
-    const hasExistingTicketType = Boolean(form.ticketTypeId)
-    const endpoint = hasExistingTicketType
-      ? `/api/events/${eventId}/ticket-types/${form.ticketTypeId}`
-      : `/api/events/${eventId}/ticket-types`
-    const method = hasExistingTicketType ? 'PATCH' : 'POST'
-
-    const response = await fetch(endpoint, {
-      method,
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
+    setTicketErrors((current) => {
+      const next = [...current]
+      next[index] = { ...(next[index] || {}), ...nextErrors }
+      return next
     })
 
-    const json = await response.json()
+    return nextErrors
+  }
+
+  async function syncTicketTypes(eventId: string, action: 'save' | 'publish') {
+    const requireComplete = action === 'publish'
+    const ticketTypes = form.ticketTypes || []
+    const ticketTypeIdsInForm = new Set(
+      ticketTypes.map((ticket) => ticket.id).filter((ticketId): ticketId is string => Boolean(ticketId))
+    )
+    const nextPersistedIds = new Set(persistedTicketTypeIdsRef.current)
+    const idsToDelete = Array.from(persistedTicketTypeIdsRef.current).filter((id) => !ticketTypeIdsInForm.has(id))
+
+    for (const typeId of idsToDelete) {
+      const response = await fetch(`/api/events/${eventId}/ticket-types/${typeId}`, {
+        method: 'DELETE',
+      })
+      if (!response.ok) {
+        const json = await response.json()
+        throw new Error(json?.error || 'Failed to delete ticket type')
+      }
+      nextPersistedIds.delete(typeId)
+    }
+
+    const nextTicketTypes = [...ticketTypes]
+
+    for (let index = 0; index < ticketTypes.length; index += 1) {
+      const ticketType = ticketTypes[index]
+      const name = ticketType.name.trim()
+      const price = parseTicketPrice(ticketType.price)
+      const currency = normalizeTicketCurrency(ticketType.currency)
+      const capacityRaw = ticketType.capacity.trim()
+      const maxCapacity = capacityRaw ? Number(capacityRaw) : null
+      const isComplete =
+        Boolean(name) &&
+        price !== null &&
+        price >= 0 &&
+        isSupportedCurrency(currency) &&
+        (maxCapacity === null || (Number.isInteger(maxCapacity) && maxCapacity > 0))
+      const shouldPersist = requireComplete ? true : hasAnyTicketInput(ticketType) && isComplete
+
+      if (!shouldPersist) continue
+
+      const payload = {
+        name,
+        price,
+        currency,
+        maxCapacity,
+        isVisible: true,
+        minPerOrder: 1,
+        maxPerOrder: 10,
+        sortOrder: index,
+      }
+
+      const hasExistingTicketType = Boolean(ticketType.id)
+      const endpoint = hasExistingTicketType
+        ? `/api/events/${eventId}/ticket-types/${ticketType.id}`
+        : `/api/events/${eventId}/ticket-types`
+      const method = hasExistingTicketType ? 'PATCH' : 'POST'
+      const response = await fetch(endpoint, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+
+      const json = await response.json()
+      if (!response.ok) {
+        parseTicketValidationErrors(json?.details, index)
+        throw new Error(json?.error || 'Failed to save ticket type')
+      }
+
+      if (!hasExistingTicketType && json?.ticketType?.id) {
+        nextTicketTypes[index] = {
+          ...nextTicketTypes[index],
+          id: json.ticketType.id as string,
+        }
+        nextPersistedIds.add(json.ticketType.id as string)
+      } else if (ticketType.id) {
+        nextPersistedIds.add(ticketType.id)
+      }
+    }
+
+    persistedTicketTypeIdsRef.current = nextPersistedIds
+    setForm((current) => ({
+      ...current,
+      ticketTypes: nextTicketTypes,
+    }))
+  }
+
+  function validate(action: 'save' | 'publish') {
+    const nextFieldErrors: FieldErrors = {}
+    const nextTicketErrors: TicketTypeFieldErrors[] = (form.ticketTypes || []).map(() => ({}))
+    const nextGeneralErrors: string[] = []
+    const requireComplete = action === 'publish'
+
+    const timezone = isValidTimeZone(form.timezone) ? form.timezone : 'UTC'
+    const startUtc = dateTimeLocalInTimeZoneToUtcIso(form.startDate, timezone)
+    const endUtc = dateTimeLocalInTimeZoneToUtcIso(form.endDate, timezone)
+
+    if (!form.title?.trim()) nextFieldErrors.title = 'Enter an event title.'
+
+    if (!form.startDate?.trim()) {
+      nextFieldErrors.startDate = 'Set start date and time.'
+    } else if (!startUtc) {
+      nextFieldErrors.startDate = 'Use a valid start date and time.'
+    }
+
+    if (!form.endDate?.trim()) {
+      nextFieldErrors.endDate = 'Set end date and time.'
+    } else if (!endUtc) {
+      nextFieldErrors.endDate = 'Use a valid end date and time.'
+    }
+
+    if (!form.timezone?.trim()) {
+      nextFieldErrors.timezone = 'Select a timezone.'
+    } else if (!isValidTimeZone(form.timezone)) {
+      nextFieldErrors.timezone = 'Select a valid IANA timezone.'
+    }
+
+    if (startUtc && endUtc && new Date(endUtc) <= new Date(startUtc)) {
+      nextFieldErrors.endDate = 'End time must be after start time.'
+    }
+
+    if (requireComplete && form.locationType !== 'ONLINE') {
+      if (!form.venue?.trim()) nextFieldErrors.venue = 'Enter venue.'
+      if (!form.address?.trim()) nextFieldErrors.address = 'Enter address.'
+      if (!form.city?.trim()) nextFieldErrors.city = 'Enter city.'
+      if (!form.country?.trim()) nextFieldErrors.country = 'Enter country.'
+    }
+
+    if (
+      requireComplete &&
+      (form.locationType === 'ONLINE' || form.locationType === 'HYBRID') &&
+      !form.onlineUrl?.trim()
+    ) {
+      nextFieldErrors.onlineUrl = 'Enter an online URL.'
+    }
+
+    if (requireComplete && !form.description?.trim()) {
+      nextFieldErrors.description = 'Add an event description.'
+    }
+
+    const ticketTypes = form.ticketTypes || []
+    const seenTicketNames = new Map<string, number[]>()
+    let hasPublishableTicketType = false
+
+    for (let index = 0; index < ticketTypes.length; index += 1) {
+      const ticket = ticketTypes[index]
+      const rowErrors = nextTicketErrors[index]
+      const name = ticket.name.trim()
+      const price = parseTicketPrice(ticket.price)
+      const currency = normalizeTicketCurrency(ticket.currency)
+      const capacityRaw = ticket.capacity.trim()
+      const maxCapacity = capacityRaw ? Number(capacityRaw) : null
+      const hasInput = hasAnyTicketInput(ticket)
+
+      if (!requireComplete && !hasInput) {
+        continue
+      }
+
+      if (!name) rowErrors.name = 'Enter ticket name.'
+      if (price === null || price < 0) rowErrors.price = 'Enter a valid price (0 or greater).'
+      if (!isSupportedCurrency(currency)) rowErrors.currency = 'Select a supported currency.'
+      if (maxCapacity !== null && (!Number.isInteger(maxCapacity) || maxCapacity < 1)) {
+        rowErrors.capacity = 'Enter a whole number greater than 0 or leave empty.'
+      }
+
+      if (name) {
+        const normalizedName = name.toLowerCase()
+        const existingIndexes = seenTicketNames.get(normalizedName) || []
+        seenTicketNames.set(normalizedName, [...existingIndexes, index])
+      }
+
+      if (Object.keys(rowErrors).length === 0 && hasInput) {
+        hasPublishableTicketType = true
+      }
+    }
+
+    for (const duplicateIndexes of seenTicketNames.values()) {
+      if (duplicateIndexes.length < 2) continue
+      for (const index of duplicateIndexes) {
+        nextTicketErrors[index].name = 'Ticket names must be unique.'
+      }
+    }
+
+    if (requireComplete && ticketTypes.length < 1) {
+      nextGeneralErrors.push('Add at least one ticket type before publishing.')
+    }
+
+    if (requireComplete && ticketTypes.length > 0 && !hasPublishableTicketType) {
+      nextGeneralErrors.push('Fix ticket type details before publishing.')
+    }
+
+    const hasTicketErrors = nextTicketErrors.some((row) => Object.keys(row).length > 0)
+
+    if (action === 'publish' && Object.keys(nextFieldErrors).length > 0) {
+      nextGeneralErrors.push('Cannot publish yet. Fix the highlighted fields.')
+    }
+
+    if (action === 'save' && (Object.keys(nextFieldErrors).length > 0 || hasTicketErrors)) {
+      nextGeneralErrors.push('Please fix the highlighted fields before saving.')
+    }
+
+    if (action === 'publish' && hasTicketErrors) {
+      nextGeneralErrors.push('Cannot publish yet. Fix ticket type fields.')
+    }
+
+    return {
+      fieldErrors: nextFieldErrors,
+      ticketErrors: nextTicketErrors,
+      generalErrors: nextGeneralErrors,
+      startUtc,
+      endUtc,
+    }
+  }
+
+  async function ensureCropSourceFile(targetField: ImageTargetField, fallbackImageSrc: string | null) {
+    const existingFile = editableImageFiles[targetField] || croppedImageFiles[targetField] || originalImageFiles[targetField]
+    if (existingFile) return existingFile
+    if (!fallbackImageSrc) return null
+
+    const response = await fetch(fallbackImageSrc)
     if (!response.ok) {
-      throw new Error(json?.error || 'Failed to save ticket type')
+      throw new Error('Failed to load existing image for cropping')
     }
 
-    if (!hasExistingTicketType && json?.ticketType?.id) {
-      updateField('ticketTypeId', json.ticketType.id)
+    const blob = await response.blob()
+    if (!blob.size) {
+      throw new Error('Image file is empty')
     }
+
+    const file = new File([blob], createFileNameFromMimeType(targetField, blob.type || 'image/jpeg'), {
+      type: blob.type || 'image/jpeg',
+    })
+
+    setOriginalImageFiles((current) => ({ ...current, [targetField]: file }))
+    setEditableImageFiles((current) => ({ ...current, [targetField]: file }))
+    return file
   }
 
-  function validateBeforePublish(): string | null {
-    const issues: string[] = []
-
-    if (!form.title?.trim()) issues.push('Event Header -> Title: Enter an event title.')
-    if (!form.startDate?.trim()) issues.push('Event Header -> Start: Set start date and time.')
-    if (!form.endDate?.trim()) issues.push('Event Header -> End: Set end date and time.')
-    if (!form.timezone?.trim()) issues.push('Event Header -> Timezone: Enter a timezone.')
-    if (!form.description?.trim()) issues.push('Overview -> Description: Add an event description.')
-
-    if (form.locationType !== 'ONLINE') {
-      if (!form.venue?.trim()) issues.push('Location -> Venue: Enter venue.')
-      if (!form.city?.trim()) issues.push('Location -> City: Enter city.')
-      if (!form.country?.trim()) issues.push('Location -> Country: Enter country.')
-    }
-
-    if ((form.locationType === 'ONLINE' || form.locationType === 'HYBRID') && !form.onlineUrl?.trim()) {
-      issues.push('Location -> Online URL: Enter an online URL.')
-    }
-
-    if (!form.ticketTypeName?.trim()) issues.push('Tickets -> Ticket Name: Enter ticket name.')
-    if (parseTicketPrice(form.ticketPrice) === null || (parseTicketPrice(form.ticketPrice) ?? 0) < 0) {
-      issues.push('Tickets -> Ticket Price: Enter a valid price (0 or greater).')
-    }
-    if (!form.ticketCurrency?.trim()) issues.push('Tickets -> Currency: Enter a currency code.')
-
-    if (issues.length === 0) return null
-    return `Cannot publish yet. Fix the following:\n- ${issues.join('\n- ')}`
-  }
-
-  async function onImageSelected(event: ChangeEvent<HTMLInputElement>, targetField: 'coverImage' | 'bottomImage') {
+  async function onImageSelected(event: ChangeEvent<HTMLInputElement>, targetField: ImageTargetField) {
     const file = event.target.files?.[0]
     if (!file) return
 
     if (!allowedImageMimeTypes.has(file.type)) {
-      setError('Please select a JPG, PNG, WEBP, or GIF image.')
+      setFieldErrors((current) => ({
+        ...current,
+        [targetField]: 'Please select a JPG, PNG, WEBP, or GIF image.',
+      }))
+      setToast({ message: 'Unsupported image format', tone: 'error' })
       event.target.value = ''
       return
     }
 
-    setLocalPreview(file, targetField)
+    setOriginalImageFiles((current) => ({ ...current, [targetField]: file }))
+    setCroppedImageFiles((current) => ({ ...current, [targetField]: null }))
+    setEditableImageFiles((current) => ({ ...current, [targetField]: file }))
+    openCropper(file, targetField)
+    event.target.value = ''
+  }
+
+  async function applyCrop() {
+    if (!cropSession || !cropPixels) {
+      setFieldErrors((current) => ({
+        ...current,
+        [cropSession?.targetField || 'coverImage']: 'Adjust the crop area before applying.',
+      }))
+      return
+    }
+
+    setIsApplyingCrop(true)
+    if (cropSession.targetField === 'coverImage') {
+      setIsUploadingBanner(true)
+    } else {
+      setIsUploadingBottom(true)
+    }
+
+    try {
+      const croppedFile = await cropImageToFile({
+        sourceUrl: cropSession.sourceUrl,
+        cropPixels,
+        fileName: cropSession.fileName,
+        mimeType: cropSession.mimeType,
+      })
+
+      setCroppedImageFiles((current) => ({ ...current, [cropSession.targetField]: croppedFile }))
+      setEditableImageFiles((current) => ({ ...current, [cropSession.targetField]: croppedFile }))
+      setLocalPreview(croppedFile, cropSession.targetField)
+      await uploadEventImage(croppedFile, cropSession.targetField)
+      setImageVersion((version) => version + 1)
+      closeCropper()
+    } catch (cropError) {
+      const message = cropError instanceof Error ? cropError.message : 'Image update failed'
+      setFieldErrors((current) => ({ ...current, [cropSession.targetField]: message }))
+      setToast({ message, tone: 'error' })
+    } finally {
+      setIsApplyingCrop(false)
+      if (cropSession.targetField === 'coverImage') {
+        setIsUploadingBanner(false)
+      } else {
+        setIsUploadingBottom(false)
+      }
+    }
+  }
+
+  async function openExistingCrop(targetField: ImageTargetField, fallbackImageSrc: string | null) {
+    setIsPreparingCrop(targetField)
+
+    try {
+      const file = await ensureCropSourceFile(targetField, fallbackImageSrc)
+      if (!file) return
+      openCropper(file, targetField)
+    } catch (cropError) {
+      const message = cropError instanceof Error ? cropError.message : 'Unable to open crop editor'
+      setFieldErrors((current) => ({ ...current, [targetField]: message }))
+      setToast({ message, tone: 'error' })
+    } finally {
+      setIsPreparingCrop(null)
+    }
+  }
+
+  async function resetImageToOriginal(targetField: ImageTargetField) {
+    const originalFile = originalImageFiles[targetField]
+    if (!originalFile) return
 
     if (targetField === 'coverImage') {
       setIsUploadingBanner(true)
@@ -325,44 +1012,61 @@ export function EventForm({ mode, initialData }: EventFormProps) {
     }
 
     try {
-      await uploadEventImage(file, targetField)
+      setCroppedImageFiles((current) => ({ ...current, [targetField]: null }))
+      setEditableImageFiles((current) => ({ ...current, [targetField]: originalFile }))
+      setLocalPreview(originalFile, targetField)
+      await uploadEventImage(originalFile, targetField)
       setImageVersion((version) => version + 1)
-    } catch (uploadError) {
-      setError(uploadError instanceof Error ? uploadError.message : 'Upload failed')
+      closeCropper()
+    } catch (resetError) {
+      const message = resetError instanceof Error ? resetError.message : 'Failed to reset image'
+      setFieldErrors((current) => ({ ...current, [targetField]: message }))
+      setToast({ message, tone: 'error' })
     } finally {
       if (targetField === 'coverImage') {
         setIsUploadingBanner(false)
       } else {
         setIsUploadingBottom(false)
       }
-      event.target.value = ''
     }
   }
 
   async function submit(action: 'save' | 'publish') {
-    if (action === 'publish') {
-      const publishValidationError = validateBeforePublish()
-      if (publishValidationError) {
-        setError(publishValidationError)
-        return
-      }
+    setSubmitError(null)
+    setGeneralErrors([])
+
+    const validationResult = validate(action)
+    setFieldErrors(validationResult.fieldErrors)
+    setTicketErrors(validationResult.ticketErrors)
+
+    const hasTicketErrors = validationResult.ticketErrors.some((row) => Object.keys(row).length > 0)
+    const hasFieldErrors = Object.keys(validationResult.fieldErrors).length > 0
+    const shouldBlockSubmit = hasFieldErrors || hasTicketErrors || (action === 'publish' && validationResult.generalErrors.length > 0)
+
+    if (shouldBlockSubmit) {
+      setGeneralErrors(validationResult.generalErrors)
+      focusFirstInvalidField(validationResult.fieldErrors, validationResult.ticketErrors)
+      return
     }
 
     setIsSubmitting(true)
-    setError(null)
 
     try {
-      const startDate = new Date(form.startDate)
-      const endDate = new Date(form.endDate)
+      const safeTimezone = isValidTimeZone(form.timezone) ? form.timezone : 'UTC'
+      const startUtc = validationResult.startUtc
+      const endUtc = validationResult.endUtc
 
-      if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) {
+      if (!startUtc || !endUtc) {
         throw new Error('Start and end dates are required')
       }
 
       const payload = {
         ...form,
-        startDate: startDate.toISOString(),
-        endDate: endDate.toISOString(),
+        timezone: safeTimezone,
+        startDate: startUtc,
+        endDate: endUtc,
+        description: form.description || '',
+        descriptionHtml: undefined,
         onlineUrl: form.onlineUrl || null,
         coverImage: form.coverImage || null,
         bottomImage: form.bottomImage || null,
@@ -370,6 +1074,12 @@ export function EventForm({ mode, initialData }: EventFormProps) {
         organizerNames: parseNameList(form.organizerNames),
         sponsorNames: parseNameList(form.sponsorNames),
         categoryIds: form.categoryIds,
+        ticketTypes: undefined,
+        ticketTypeId: undefined,
+        ticketTypeName: undefined,
+        ticketPrice: undefined,
+        ticketCurrency: undefined,
+        ticketCapacity: undefined,
       }
 
       const endpoint = mode === 'create' ? '/api/events' : `/api/events/${form.id}`
@@ -383,13 +1093,20 @@ export function EventForm({ mode, initialData }: EventFormProps) {
 
       const eventJson = await eventRes.json()
       if (!eventRes.ok) {
+        const apiFieldErrors = parseApiValidationErrors(eventJson?.details)
+        if (Object.keys(apiFieldErrors).length > 0) {
+          setFieldErrors(apiFieldErrors)
+          focusFirstInvalidField(apiFieldErrors, [])
+        }
+
         throw new Error(eventJson?.error || 'Failed to save event')
       }
 
       const eventId = eventJson?.data?.id || form.id
+      const eventSlug = (eventJson?.data?.slug as string | undefined) || form.slug
 
       if (eventId) {
-        await upsertPrimaryTicketType(eventId, action === 'publish')
+        await syncTicketTypes(eventId, action)
       }
 
       if (action === 'publish' && eventId) {
@@ -399,22 +1116,79 @@ export function EventForm({ mode, initialData }: EventFormProps) {
 
         const publishJson = await publishRes.json()
         if (!publishRes.ok) {
+          const publishFieldErrors = parsePublishIssueFieldErrors(publishJson?.details)
+          if (Object.keys(publishFieldErrors).length > 0) {
+            setFieldErrors((current) => ({ ...current, ...publishFieldErrors }))
+            focusFirstInvalidField(publishFieldErrors, [])
+          }
           throw new Error(publishJson?.error || 'Failed to publish event')
         }
       }
 
+      cleanupObjectUrl('coverImage')
+      cleanupObjectUrl('bottomImage')
+
+      if (mode === 'create' && eventSlug) {
+        router.push(`/events/${eventSlug}?notice=created`)
+        return
+      }
+
+      if (mode === 'edit') {
+        setToast({ message: action === 'publish' ? 'Event published' : 'Event updated', tone: 'success' })
+        router.refresh()
+        return
+      }
+
       if (eventId) {
-        cleanupObjectUrl('coverImage')
-        cleanupObjectUrl('bottomImage')
         router.push(`/dashboard/events/${eventId}/edit`)
       } else {
         router.refresh()
       }
-    } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message : 'Failed to save event')
+    } catch (submitErr) {
+      const message = submitErr instanceof Error ? submitErr.message : 'Failed to save event'
+      setSubmitError(message)
+      setToast({ message, tone: 'error' })
     } finally {
       setIsSubmitting(false)
     }
+  }
+
+  function onTimezoneChanged(nextTimezone: string) {
+    const fallbackTimezone = isValidTimeZone(nextTimezone) ? nextTimezone : 'UTC'
+
+    setForm((current) => ({
+      ...current,
+      timezone: fallbackTimezone,
+      startDate: convertDateTimeLocalBetweenTimeZones(current.startDate, current.timezone || 'UTC', fallbackTimezone),
+      endDate: convertDateTimeLocalBetweenTimeZones(current.endDate, current.timezone || 'UTC', fallbackTimezone),
+    }))
+
+    clearFieldError('timezone')
+    clearFieldError('startDate')
+    clearFieldError('endDate')
+  }
+
+  function onCancel() {
+    const isDirty =
+      buildSnapshot(form) !== initialSnapshotRef.current ||
+      Boolean(croppedImageFiles.coverImage) ||
+      Boolean(croppedImageFiles.bottomImage)
+
+    if (isDirty && !window.confirm('Discard unsaved changes?')) {
+      return
+    }
+
+    if (mode === 'create') {
+      router.push('/dashboard/events')
+      return
+    }
+
+    if (form.slug) {
+      router.push(`/events/${form.slug}`)
+      return
+    }
+
+    router.push('/dashboard/events')
   }
 
   const remoteBannerPreviewSrc =
@@ -425,8 +1199,11 @@ export function EventForm({ mode, initialData }: EventFormProps) {
     mode === 'edit' && form.id && form.bottomImage
       ? `/api/events/${encodeURIComponent(form.id)}/image?slot=bottom&v=${imageVersion}`
       : null
-  const bannerImageSrc = bannerPreviewSrc || remoteBannerPreviewSrc
-  const bottomImageSrc = bottomPreviewSrc || remoteBottomPreviewSrc
+  const bannerImageSrc = bannerPreviewSrc || remoteBannerPreviewSrc || form.coverImage || null
+  const bottomImageSrc = bottomPreviewSrc || remoteBottomPreviewSrc || form.bottomImage || null
+
+  const canEditCoverImage = Boolean(bannerImageSrc || editableImageFiles.coverImage || originalImageFiles.coverImage)
+  const canEditBottomImage = Boolean(bottomImageSrc || editableImageFiles.bottomImage || originalImageFiles.bottomImage)
 
   return (
     <div className="space-y-8 px-1 sm:px-0">
@@ -434,20 +1211,24 @@ export function EventForm({ mode, initialData }: EventFormProps) {
         {mode === 'create' ? 'Create Event Info' : 'Edit Event Info'}
       </h2>
 
-      {error ? (
-        <div className="whitespace-pre-line rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div>
+      {generalErrors.length > 0 ? (
+        <div className="sticky top-4 z-10 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+          {generalErrors.map((message) => (
+            <p key={message}>{message}</p>
+          ))}
+        </div>
       ) : null}
 
-      <section className="overflow-hidden rounded-xl border-4 border-blue-500 bg-gray-900">
+      <section className="aspect-[16/9] overflow-hidden rounded-xl border-4 border-blue-500 bg-gray-900">
         {bannerImageSrc ? (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={bannerImageSrc} alt="Event banner" className="h-[230px] w-full object-cover sm:h-[340px]" />
+          <img src={bannerImageSrc} alt="Event banner" className="h-full w-full object-cover" />
         ) : (
-          <div className="h-[230px] bg-gradient-to-r from-slate-700 to-slate-900 sm:h-[340px]" />
+          <div className="h-full w-full bg-gradient-to-r from-slate-700 to-slate-900" />
         )}
       </section>
 
-      <div>
+      <div className="flex flex-wrap gap-3">
         <input
           ref={bannerInputRef}
           id="coverImageUpload"
@@ -465,26 +1246,66 @@ export function EventForm({ mode, initialData }: EventFormProps) {
         >
           Add banner image
         </Button>
+        {canEditCoverImage ? (
+          <Button
+            type="button"
+            variant="outline"
+            isLoading={isPreparingCrop === 'coverImage'}
+            onClick={() => {
+              void openExistingCrop('coverImage', bannerImageSrc)
+            }}
+          >
+            Edit / Crop banner
+          </Button>
+        ) : null}
+        {croppedImageFiles.coverImage ? (
+          <Button type="button" variant="outline" onClick={() => void resetImageToOriginal('coverImage')}>
+            Reset banner
+          </Button>
+        ) : null}
       </div>
+      {fieldErrors.coverImage ? <p className="text-sm text-red-600">{fieldErrors.coverImage}</p> : null}
 
       <section className="space-y-5 border-b border-gray-300 pb-6">
         <h3 className="text-3xl font-semibold text-gray-900">Event Header</h3>
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
           <div className="md:col-span-2">
             <Label htmlFor="title" required>Title</Label>
-            <Input id="title" value={form.title} onChange={(e) => updateField('title', e.target.value)} />
+            <Input id="title" value={form.title} error={fieldErrors.title} onChange={(e) => updateField('title', e.target.value)} />
           </div>
           <div>
             <Label htmlFor="startDate" required>Start</Label>
-            <Input id="startDate" type="datetime-local" value={form.startDate} onChange={(e) => updateField('startDate', e.target.value)} />
+            <Input
+              id="startDate"
+              type="datetime-local"
+              value={form.startDate}
+              error={fieldErrors.startDate}
+              onChange={(e) => updateField('startDate', e.target.value)}
+            />
           </div>
           <div>
             <Label htmlFor="endDate" required>End</Label>
-            <Input id="endDate" type="datetime-local" value={form.endDate} onChange={(e) => updateField('endDate', e.target.value)} />
+            <Input
+              id="endDate"
+              type="datetime-local"
+              value={form.endDate}
+              error={fieldErrors.endDate}
+              onChange={(e) => updateField('endDate', e.target.value)}
+            />
           </div>
           <div>
             <Label htmlFor="timezone" required>Timezone</Label>
-            <Input id="timezone" value={form.timezone} onChange={(e) => updateField('timezone', e.target.value)} />
+            <select
+              id="timezone"
+              className="h-10 w-full rounded-md border border-gray-300 px-3 text-sm"
+              value={form.timezone}
+              onChange={(e) => onTimezoneChanged(e.target.value)}
+            >
+              {timezoneOptions.map((timezone) => (
+                <option key={timezone} value={timezone}>{timezone}</option>
+              ))}
+            </select>
+            {fieldErrors.timezone ? <p className="mt-1 text-sm text-red-600">{fieldErrors.timezone}</p> : null}
           </div>
           <div>
             <Label htmlFor="locationType" required>Location Type</Label>
@@ -503,15 +1324,20 @@ export function EventForm({ mode, initialData }: EventFormProps) {
             <>
               <div>
                 <Label htmlFor="venue" required>Venue</Label>
-                <Input id="venue" value={form.venue || ''} onChange={(e) => updateField('venue', e.target.value)} />
+                <Input id="venue" value={form.venue || ''} error={fieldErrors.venue} onChange={(e) => updateField('venue', e.target.value)} />
               </div>
               <div>
-                <Label htmlFor="address">Address</Label>
-                <Input id="address" value={form.address || ''} onChange={(e) => updateField('address', e.target.value)} />
+                <Label htmlFor="address" required>Address</Label>
+                <Input
+                  id="address"
+                  value={form.address || ''}
+                  error={fieldErrors.address}
+                  onChange={(e) => updateField('address', e.target.value)}
+                />
               </div>
               <div>
                 <Label htmlFor="city" required>City</Label>
-                <Input id="city" value={form.city || ''} onChange={(e) => updateField('city', e.target.value)} />
+                <Input id="city" value={form.city || ''} error={fieldErrors.city} onChange={(e) => updateField('city', e.target.value)} />
               </div>
               <div>
                 <Label htmlFor="state">State</Label>
@@ -519,7 +1345,7 @@ export function EventForm({ mode, initialData }: EventFormProps) {
               </div>
               <div>
                 <Label htmlFor="country" required>Country</Label>
-                <Input id="country" value={form.country || ''} onChange={(e) => updateField('country', e.target.value)} />
+                <Input id="country" value={form.country || ''} error={fieldErrors.country} onChange={(e) => updateField('country', e.target.value)} />
               </div>
               <div>
                 <Label htmlFor="postalCode">Postal Code</Label>
@@ -530,7 +1356,7 @@ export function EventForm({ mode, initialData }: EventFormProps) {
           {(form.locationType === 'ONLINE' || form.locationType === 'HYBRID') ? (
             <div className="md:col-span-2">
               <Label htmlFor="onlineUrl" required>Online URL</Label>
-              <Input id="onlineUrl" value={form.onlineUrl || ''} onChange={(e) => updateField('onlineUrl', e.target.value)} />
+              <Input id="onlineUrl" value={form.onlineUrl || ''} error={fieldErrors.onlineUrl} onChange={(e) => updateField('onlineUrl', e.target.value)} />
             </div>
           ) : null}
         </div>
@@ -538,40 +1364,37 @@ export function EventForm({ mode, initialData }: EventFormProps) {
 
       <section className="space-y-5 border-b border-gray-300 pb-6">
         <h3 className="text-3xl font-semibold text-gray-900">Overview</h3>
-        <div className="space-y-4">
-          <div>
-            <Label htmlFor="description" required>Description</Label>
-            <textarea
-              id="description"
-              className="min-h-28 w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
-              value={form.description || ''}
-              onChange={(e) => updateField('description', e.target.value)}
-            />
-          </div>
-          <div>
-            <Label htmlFor="descriptionHtml">Rich Description (HTML)</Label>
-            <textarea
-              id="descriptionHtml"
-              className="min-h-40 w-full rounded-md border border-gray-300 px-3 py-2 font-mono text-sm"
-              value={form.descriptionHtml || ''}
-              onChange={(e) => updateField('descriptionHtml', e.target.value)}
-            />
-          </div>
+        <div>
+          <Label htmlFor="description" required>Description</Label>
+          <textarea
+            id="description"
+            className="min-h-40 w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+            value={form.description || ''}
+            onChange={(e) => updateField('description', e.target.value)}
+          />
+          {fieldErrors.description ? <p className="mt-1 text-sm text-red-600">{fieldErrors.description}</p> : null}
         </div>
       </section>
 
       <section className="space-y-5 border-b border-gray-300 pb-6">
-        <h3 className="text-3xl font-semibold text-gray-900">People (Optional)</h3>
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-          <div>
-            <Label htmlFor="speakerNames">Speakers</Label>
-            <Input
-              id="speakerNames"
-              placeholder="Jane Doe, John Doe"
-              value={form.speakerNames || ''}
-              onChange={(e) => updateField('speakerNames', e.target.value)}
-            />
-          </div>
+        <h3 className="text-3xl font-semibold text-gray-900">Program</h3>
+        <p className="text-sm text-gray-600">
+          {children
+            ? 'Manage people and schedule in one place so agenda items can be linked to speakers.'
+            : 'Add program people now. After your first save, you can manage detailed speakers and agenda here.'}
+        </p>
+        <div className={`grid grid-cols-1 gap-4 ${mode === 'create' ? 'md:grid-cols-3' : 'md:grid-cols-2'}`}>
+          {mode === 'create' ? (
+            <div>
+              <Label htmlFor="speakerNames">Speakers</Label>
+              <Input
+                id="speakerNames"
+                placeholder="Jane Doe, John Doe"
+                value={form.speakerNames || ''}
+                onChange={(e) => updateField('speakerNames', e.target.value)}
+              />
+            </div>
+          ) : null}
           <div>
             <Label htmlFor="organizerNames">Organizers</Label>
             <Input
@@ -591,70 +1414,124 @@ export function EventForm({ mode, initialData }: EventFormProps) {
             />
           </div>
         </div>
+
+        {children ? (
+          <div className="space-y-5 border-t border-gray-200 pt-5">
+            {children}
+          </div>
+        ) : null}
       </section>
 
       <section className="space-y-5 border-b border-gray-300 pb-6">
-        <h3 className="text-3xl font-semibold text-gray-900">Tickets</h3>
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
-          <div className="md:col-span-2">
-            <Label htmlFor="ticketTypeName" required>Ticket Name</Label>
-            <Input
-              id="ticketTypeName"
-              value={form.ticketTypeName || ''}
-              onChange={(e) => updateField('ticketTypeName', e.target.value)}
-              placeholder="General Admission"
-            />
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h3 className="text-3xl font-semibold text-gray-900">Ticket Types</h3>
+          <Button type="button" variant="outline" onClick={addTicketType}>
+            + Add ticket type
+          </Button>
+        </div>
+
+        {(form.ticketTypes || []).length < 1 ? (
+          <div className="rounded-lg border border-dashed border-gray-300 bg-gray-50 p-4 text-sm text-gray-600">
+            No ticket types yet. Add at least one before publishing.
           </div>
-          <div>
-            <Label htmlFor="ticketPrice" required>Ticket Price</Label>
-            <Input
-              id="ticketPrice"
-              type="number"
-              min={0}
-              step="0.01"
-              value={form.ticketPrice || ''}
-              onChange={(e) => updateField('ticketPrice', e.target.value)}
-              placeholder="0"
-            />
-          </div>
-          <div>
-            <Label htmlFor="ticketCurrency" required>Currency</Label>
-            <Input
-              id="ticketCurrency"
-              value={form.ticketCurrency || ''}
-              onChange={(e) => updateField('ticketCurrency', e.target.value)}
-              placeholder="SEK"
-            />
-          </div>
-          <div>
-            <Label htmlFor="ticketCapacity">Capacity (optional)</Label>
-            <Input
-              id="ticketCapacity"
-              type="number"
-              min={1}
-              step={1}
-              value={form.ticketCapacity || ''}
-              onChange={(e) => updateField('ticketCapacity', e.target.value)}
-              placeholder="Leave empty for unlimited"
-            />
-          </div>
+        ) : null}
+
+        <div className="space-y-4">
+          {(form.ticketTypes || []).map((ticketType, index) => {
+            const rowErrors = ticketErrors[index] || {}
+            const normalizedCurrency = normalizeTicketCurrency(ticketType.currency)
+            const legacyCurrency = normalizedCurrency && !isSupportedCurrency(normalizedCurrency)
+              ? normalizedCurrency
+              : null
+
+            return (
+              <div key={ticketType.id || `new-ticket-type-${index}`} className="rounded-lg border border-gray-200 p-4">
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <p className="text-sm font-semibold text-gray-800">Ticket Type {index + 1}</p>
+                  <Button type="button" variant="outline" onClick={() => removeTicketType(index)}>
+                    Remove
+                  </Button>
+                </div>
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
+                  <div className="md:col-span-2">
+                    <Label htmlFor={`ticketTypeName-${index}`} required>Ticket Name</Label>
+                    <Input
+                      id={`ticketTypeName-${index}`}
+                      value={ticketType.name}
+                      error={rowErrors.name}
+                      onChange={(event) => updateTicketTypeField(index, 'name', event.target.value)}
+                      placeholder="General Admission"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor={`ticketPrice-${index}`} required>Ticket Price</Label>
+                    <Input
+                      id={`ticketPrice-${index}`}
+                      type="number"
+                      min={0}
+                      step="0.01"
+                      value={ticketType.price}
+                      error={rowErrors.price}
+                      onChange={(event) => updateTicketTypeField(index, 'price', event.target.value)}
+                      placeholder="0"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor={`ticketCurrency-${index}`} required>Currency</Label>
+                    <select
+                      id={`ticketCurrency-${index}`}
+                      className={`h-10 w-full rounded-md border px-3 text-sm ${
+                        rowErrors.currency ? 'border-red-500' : 'border-gray-300'
+                      }`}
+                      value={legacyCurrency || normalizedCurrency}
+                      onChange={(event) => updateTicketTypeField(index, 'currency', event.target.value)}
+                    >
+                      {legacyCurrency ? (
+                        <option value={legacyCurrency}>{legacyCurrency} (legacy unsupported)</option>
+                      ) : null}
+                      {SUPPORTED_CURRENCIES.map((currency) => (
+                        <option key={currency} value={currency}>{currency}</option>
+                      ))}
+                    </select>
+                    {legacyCurrency ? (
+                      <p className="mt-1 text-sm text-amber-700">Select a supported currency before publishing.</p>
+                    ) : null}
+                    {rowErrors.currency ? <p className="mt-1 text-sm text-red-600">{rowErrors.currency}</p> : null}
+                  </div>
+                  <div>
+                    <Label htmlFor={`ticketCapacity-${index}`}>Capacity (optional)</Label>
+                    <Input
+                      id={`ticketCapacity-${index}`}
+                      type="number"
+                      min={1}
+                      step={1}
+                      value={ticketType.capacity}
+                      error={rowErrors.capacity}
+                      onChange={(event) => updateTicketTypeField(index, 'capacity', event.target.value)}
+                      placeholder="Leave empty for unlimited"
+                    />
+                  </div>
+                </div>
+              </div>
+            )
+          })}
         </div>
       </section>
 
-      <section className="space-y-5">
+      <section className="space-y-5 border-b border-gray-300 pb-6">
         <h3 className="text-3xl font-semibold text-gray-900">Bottom Visual</h3>
         {bottomImageSrc ? (
-          <div className="overflow-hidden rounded-none bg-gray-900">
+          <div className="aspect-[16/9] overflow-hidden rounded-xl bg-gray-900">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={bottomImageSrc} alt="Event bottom visual" className="h-[230px] w-full object-cover sm:h-[340px]" />
+            <img src={bottomImageSrc} alt="Event bottom visual" className="h-full w-full object-cover" />
           </div>
         ) : (
-          <div className="flex h-[140px] items-center justify-center rounded-xl border border-dashed border-gray-300 bg-gray-50 text-sm text-gray-500">
+          <div className="flex aspect-[16/9] items-center justify-center rounded-xl border border-dashed border-gray-300 bg-gray-50 text-sm text-gray-500">
             No bottom image selected.
           </div>
         )}
 
-        <div>
+        <div className="flex flex-wrap gap-3">
           <input
             ref={bottomInputRef}
             id="bottomImageUpload"
@@ -672,7 +1549,25 @@ export function EventForm({ mode, initialData }: EventFormProps) {
           >
             Add bottom image
           </Button>
+          {canEditBottomImage ? (
+            <Button
+              type="button"
+              variant="outline"
+              isLoading={isPreparingCrop === 'bottomImage'}
+              onClick={() => {
+                void openExistingCrop('bottomImage', bottomImageSrc)
+              }}
+            >
+              Edit / Crop bottom image
+            </Button>
+          ) : null}
+          {croppedImageFiles.bottomImage ? (
+            <Button type="button" variant="outline" onClick={() => void resetImageToOriginal('bottomImage')}>
+              Reset bottom image
+            </Button>
+          ) : null}
         </div>
+        {fieldErrors.bottomImage ? <p className="text-sm text-red-600">{fieldErrors.bottomImage}</p> : null}
 
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
           <div>
@@ -714,7 +1609,16 @@ export function EventForm({ mode, initialData }: EventFormProps) {
         </div>
       </section>
 
+      {submitError ? (
+        <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+          {submitError}
+        </div>
+      ) : null}
+
       <div className="flex flex-wrap gap-3">
+        <Button type="button" variant="outline" onClick={onCancel} disabled={isSubmitting}>
+          Cancel
+        </Button>
         <Button onClick={() => submit('save')} isLoading={isSubmitting}>
           Save Draft
         </Button>
@@ -722,6 +1626,66 @@ export function EventForm({ mode, initialData }: EventFormProps) {
           Save and Publish
         </Button>
       </div>
+
+      {cropSession ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
+          <div className="w-full max-w-3xl rounded-xl bg-white p-4 shadow-xl">
+            <h4 className="text-lg font-semibold text-gray-900">Edit image crop</h4>
+            <p className="mt-1 text-sm text-gray-600">Adjust zoom and position, then apply crop.</p>
+
+            <div className="relative mt-4 h-[420px] w-full overflow-hidden rounded-lg bg-gray-900">
+              <Cropper
+                image={cropSession.sourceUrl}
+                crop={cropPosition}
+                zoom={cropZoom}
+                aspect={16 / 9}
+                onCropChange={setCropPosition}
+                onZoomChange={setCropZoom}
+                onCropComplete={(_, croppedAreaPixels) => setCropPixels(croppedAreaPixels)}
+              />
+            </div>
+
+            <div className="mt-4">
+              <Label htmlFor="cropZoom">Zoom</Label>
+              <input
+                id="cropZoom"
+                type="range"
+                min={1}
+                max={3}
+                step={0.01}
+                value={cropZoom}
+                onChange={(e) => setCropZoom(Number(e.target.value))}
+                className="w-full"
+              />
+            </div>
+
+            <div className="mt-5 flex flex-wrap gap-3">
+              <Button type="button" variant="outline" onClick={closeCropper}>
+                Close
+              </Button>
+              {cropSession.targetField === 'coverImage' && croppedImageFiles.coverImage ? (
+                <Button type="button" variant="outline" onClick={() => void resetImageToOriginal('coverImage')}>
+                  Reset to original
+                </Button>
+              ) : null}
+              {cropSession.targetField === 'bottomImage' && croppedImageFiles.bottomImage ? (
+                <Button type="button" variant="outline" onClick={() => void resetImageToOriginal('bottomImage')}>
+                  Reset to original
+                </Button>
+              ) : null}
+              <Button type="button" onClick={applyCrop} isLoading={isApplyingCrop}>
+                Apply crop
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      <FloatingToast
+        message={toast?.message || null}
+        tone={toast?.tone || 'success'}
+        onDismiss={() => setToast(null)}
+      />
     </div>
   )
 }

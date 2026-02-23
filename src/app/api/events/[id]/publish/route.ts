@@ -63,11 +63,11 @@ export async function POST(_request: NextRequest, context: RouteContext) {
       })
     }
 
-    if (!event.description?.trim()) {
+    if (!event.description?.trim() && !event.descriptionHtml?.trim()) {
       issues.push({
         section: 'Overview',
         field: 'Description',
-        message: 'Add an event description.',
+        message: 'Add a simple or rich description.',
       })
     }
 
@@ -103,26 +103,33 @@ export async function POST(_request: NextRequest, context: RouteContext) {
       })
     }
 
-    if (event.locationType === 'PHYSICAL') {
+    if (event.locationType !== 'ONLINE') {
       if (!event.venue?.trim()) {
         issues.push({
           section: 'Location',
           field: 'Venue',
-          message: 'Add a venue for a physical event.',
+          message: 'Add a venue for a physical or hybrid event.',
+        })
+      }
+      if (!event.address?.trim()) {
+        issues.push({
+          section: 'Location',
+          field: 'Address',
+          message: 'Add an address for a physical or hybrid event.',
         })
       }
       if (!event.city?.trim()) {
         issues.push({
           section: 'Location',
           field: 'City',
-          message: 'Add a city for a physical event.',
+          message: 'Add a city for a physical or hybrid event.',
         })
       }
       if (!event.country?.trim()) {
         issues.push({
           section: 'Location',
           field: 'Country',
-          message: 'Add a country for a physical event.',
+          message: 'Add a country for a physical or hybrid event.',
         })
       }
     }

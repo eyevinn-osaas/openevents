@@ -62,16 +62,16 @@ export function EventCard({ event }: EventCardProps) {
             />
           ) : null}
         </div>
-        <CardHeader>
+        <CardHeader className="p-3">
           <CardTitle className="text-xl">{event.title}</CardTitle>
           <p className="text-sm text-gray-600">by {event.organizer.orgName}</p>
         </CardHeader>
-        <CardContent className="space-y-2 text-sm text-gray-700">
+        <CardContent className="space-y-2 text-sm text-gray-700 p-3 pt-0">
           <p>{new Date(event.startDate).toLocaleString()}</p>
           <p>{formatLocation(event)}</p>
           <p>{getPriceRange(event.ticketTypes)}</p>
         </CardContent>
-        <CardFooter>
+        <CardFooter className="p-3 pt-0">
           <span className="rounded-full bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700">
             {event.visibility}
           </span>
