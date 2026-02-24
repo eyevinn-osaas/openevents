@@ -22,7 +22,7 @@ export function getRedisClient(): Redis | null {
   const redisUrl = process.env.REDIS_URL
 
   if (!redisUrl) {
-    console.warn('[Redis] REDIS_URL not configured - caching and rate limiting disabled')
+    console.warn('[Redis] REDIS_URL not configured - rate limiting and caching disabled')
     return null
   }
 
