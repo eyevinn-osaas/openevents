@@ -5,6 +5,7 @@ import { prisma } from '@/lib/db'
 import { sendOrderConfirmationEmail } from '@/lib/email'
 import { capturePayment, getPaymentStatus } from '@/lib/payments'
 import { generateTicketCreateInput, lockTicketTypes } from '@/lib/orders'
+import { expirePendingOrderIfNeeded } from '@/lib/orders/expirePendingOrder'
 import { formatDateTime } from '@/lib/utils'
 
 interface RouteContext {
@@ -80,6 +81,11 @@ export async function GET(request: NextRequest, context: RouteContext) {
     // Check if already paid
     if (order.status === 'PAID') {
       return NextResponse.redirect(`${APP_URL}/orders/${order.orderNumber}/confirmation`)
+    }
+
+    if (order.status === 'PENDING' && order.expiresAt && order.expiresAt <= new Date()) {
+      await expirePendingOrderIfNeeded(order.id)
+      return NextResponse.redirect(`${APP_URL}/checkout-error?error=reservation_expired`)
     }
 
     // Check if order can be paid
@@ -175,6 +181,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
           data: {
             status: 'PAID',
             paidAt: new Date(),
+            expiresAt: null,
             paymentId: captureResult.captureId,
             paymentMethod: PaymentMethod.PAYPAL,
           },

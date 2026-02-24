@@ -11,6 +11,7 @@ import { Label } from '@/components/ui/label'
 import { DiscountCodeInput, type AppliedDiscount } from '@/components/tickets/DiscountCodeInput'
 import { OrderSummary, type SummaryLineItem } from '@/components/tickets/OrderSummary'
 import { TicketSelector, type SelectableTicketType } from '@/components/tickets/TicketSelector'
+import { getClientOrderReservationTtlMinutes } from '@/lib/orders/reservation'
 
 interface CheckoutFormProps {
   event: {
@@ -71,10 +72,18 @@ function calculateDiscountAmount(
   return 0
 }
 
+function formatRemainingTime(totalSeconds: number): string {
+  const safeSeconds = Math.max(0, totalSeconds)
+  const minutes = Math.floor(safeSeconds / 60)
+  const seconds = safeSeconds % 60
+
+  return `${minutes}:${seconds.toString().padStart(2, '0')}`
+}
+
 export function CheckoutForm({ event }: CheckoutFormProps) {
   const router = useRouter()
   const searchParams = useSearchParams()
-  const { data: session, status } = useSession()
+  const { status } = useSession()
 
   const [ticketTypes, setTicketTypes] = useState<SelectableTicketType[]>([])
   const [ticketLoading, setTicketLoading] = useState(true)
@@ -85,6 +94,11 @@ export function CheckoutForm({ event }: CheckoutFormProps) {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [isRedirecting, setIsRedirecting] = useState(false)
+  const [reservationTtlMinutes, setReservationTtlMinutes] = useState(() =>
+    getClientOrderReservationTtlMinutes()
+  )
+  const [reservationExpiresAt, setReservationExpiresAt] = useState<Date | null>(null)
+  const [reservationSecondsRemaining, setReservationSecondsRemaining] = useState<number | null>(null)
 
   // Map of ticketTypeId -> AttendeeFormState[]
   const [attendeesByType, setAttendeesByType] = useState<Record<string, AttendeeFormState[]>>({})
@@ -244,6 +258,25 @@ export function CheckoutForm({ event }: CheckoutFormProps) {
     }
   }, [discount])
 
+  useEffect(() => {
+    if (!reservationExpiresAt) {
+      setReservationSecondsRemaining(null)
+      return
+    }
+
+    const updateRemaining = () => {
+      const remainingSeconds = Math.ceil((reservationExpiresAt.getTime() - Date.now()) / 1000)
+      setReservationSecondsRemaining(Math.max(0, remainingSeconds))
+    }
+
+    updateRemaining()
+    const interval = window.setInterval(updateRemaining, 1000)
+
+    return () => {
+      window.clearInterval(interval)
+    }
+  }, [reservationExpiresAt])
+
   function handleQuantityChange(ticketTypeId: string, quantity: number) {
     setQuantities((current) => ({
       ...current,
@@ -300,6 +333,8 @@ export function CheckoutForm({ event }: CheckoutFormProps) {
 
     setIsSubmitting(true)
     setSubmitError(null)
+    setReservationExpiresAt(null)
+    setReservationSecondsRemaining(null)
 
     try {
       const createOrderResponse = await fetch('/api/orders', {
@@ -327,6 +362,20 @@ export function CheckoutForm({ event }: CheckoutFormProps) {
       }
 
       const orderNumber = createOrderData.order.orderNumber as string
+      const nextReservationTtl = createOrderData.checkout?.reservationTtlMinutes
+      if (typeof nextReservationTtl === 'number' && nextReservationTtl > 0) {
+        setReservationTtlMinutes(Math.floor(nextReservationTtl))
+      }
+
+      if (createOrderData.checkout?.requiresPayment) {
+        const rawReservationExpiresAt = createOrderData.checkout?.reservationExpiresAt
+        if (typeof rawReservationExpiresAt === 'string') {
+          const parsedReservationExpiresAt = new Date(rawReservationExpiresAt)
+          if (!Number.isNaN(parsedReservationExpiresAt.getTime())) {
+            setReservationExpiresAt(parsedReservationExpiresAt)
+          }
+        }
+      }
 
       // Handle different checkout flows
       if (createOrderData.checkout.requiresPayment) {
@@ -683,6 +732,27 @@ export function CheckoutForm({ event }: CheckoutFormProps) {
           currency={selectedItems[0]?.currency ?? 'SEK'}
           discountCode={discount?.code}
         />
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg">Reservation Window</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            <p className="text-sm text-gray-600">
+              Pending checkout reservations are held for {reservationTtlMinutes} minutes.
+            </p>
+            {reservationSecondsRemaining !== null && reservationSecondsRemaining > 0 && (
+              <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-800">
+                Your current reservation expires in {formatRemainingTime(reservationSecondsRemaining)}.
+              </p>
+            )}
+            {reservationSecondsRemaining === 0 && (
+              <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-700">
+                This reservation expired. Start checkout again to reserve tickets.
+              </p>
+            )}
+          </CardContent>
+        </Card>
 
         <Card>
           <CardHeader>

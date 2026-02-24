@@ -4,6 +4,7 @@ import { requireAuth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { sendOrderConfirmationEmail } from '@/lib/email'
 import { lockTicketTypes, prepareOrderItems, generateTicketCreateInput } from '@/lib/orders'
+import { getOrderReservationExpiry, getOrderReservationTtlMinutes } from '@/lib/orders/reservation'
 import {
   calculateDiscountAmount,
   decimalToNumber,
@@ -20,6 +21,11 @@ type DiscountCodeWithLinks = Prisma.DiscountCodeGetPayload<{
 
 export async function POST(request: NextRequest) {
   try {
+    const reservationTtlMinutes = getOrderReservationTtlMinutes(
+      process.env.ORDER_RESERVATION_TTL_MINUTES ??
+        process.env.NEXT_PUBLIC_ORDER_RESERVATION_TTL_MINUTES
+    )
+
     const user = await requireAuth()
     const body = await request.json()
     const parsed = createOrderSchema.safeParse(body)
@@ -193,6 +199,9 @@ export async function POST(request: NextRequest) {
           paymentMethod = 'FREE'
         }
 
+        const now = new Date()
+        const expiresAt = status === 'PENDING' ? getOrderReservationExpiry(now, reservationTtlMinutes) : null
+
         const order = await tx.order.create({
           data: {
             orderNumber: generateOrderNumber(),
@@ -214,7 +223,8 @@ export async function POST(request: NextRequest) {
             currency: ticketTypes[0]?.currency ?? 'SEK',
             status,
             paymentMethod,
-            paidAt: status === 'PAID' ? new Date() : null,
+            expiresAt,
+            paidAt: status === 'PAID' ? now : null,
           },
           include: {
             items: true,
@@ -348,6 +358,8 @@ export async function POST(request: NextRequest) {
         requiresPayment: createdOrder.status === 'PENDING',
         isInvoiceFlow: createdOrder.status === 'PENDING_INVOICE',
         isFreeOrder: createdOrder.status === 'PAID' && createdOrder.paymentMethod === 'FREE',
+        reservationTtlMinutes,
+        reservationExpiresAt: createdOrder.expiresAt?.toISOString() ?? null,
       },
       message:
         createdOrder.status === 'PAID'
