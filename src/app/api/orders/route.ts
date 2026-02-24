@@ -223,6 +223,13 @@ export async function POST(request: NextRequest) {
           },
         })
 
+        // Build a map of attendee data from the request, keyed by ticketTypeId
+        const attendeesByTicketType = new Map(
+          input.items
+            .filter((item) => item.attendees && item.attendees.length > 0)
+            .map((item) => [item.ticketTypeId, item.attendees!])
+        )
+
         if (preparedOrder.items.length > 0) {
           await tx.orderItem.createMany({
             data: preparedOrder.items.map((item) => ({
@@ -231,6 +238,7 @@ export async function POST(request: NextRequest) {
               quantity: item.quantity,
               unitPrice: item.unitPrice,
               totalPrice: item.totalPrice,
+              attendeeData: attendeesByTicketType.get(item.ticketTypeId) ?? undefined,
             })),
           })
         }
@@ -247,7 +255,13 @@ export async function POST(request: NextRequest) {
             })
           }
 
-          const tickets = generateTicketCreateInput(order.id, preparedOrder.items)
+          const tickets = generateTicketCreateInput(
+            order.id,
+            preparedOrder.items.map((item) => ({
+              ...item,
+              attendees: attendeesByTicketType.get(item.ticketTypeId),
+            }))
+          )
           if (tickets.length > 0) {
             await tx.ticket.createMany({ data: tickets })
           }

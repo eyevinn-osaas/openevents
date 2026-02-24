@@ -190,6 +190,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
             unitPrice: Number(item.unitPrice),
             totalPrice: Number(item.totalPrice),
             currency: latestOrder.currency,
+            attendees: Array.isArray(item.attendeeData) ? (item.attendeeData as unknown as import('@/lib/orders').AttendeeData[]) : undefined,
           }))
         )
 

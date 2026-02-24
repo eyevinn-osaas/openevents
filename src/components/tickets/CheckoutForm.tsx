@@ -32,6 +32,18 @@ interface BuyerFormState {
   country: string
 }
 
+interface AttendeeFormState {
+  firstName: string
+  lastName: string
+  email: string
+  title: string
+  organization: string
+}
+
+function emptyAttendee(): AttendeeFormState {
+  return { firstName: '', lastName: '', email: '', title: '', organization: '' }
+}
+
 function calculateDiscountAmount(
   subtotal: number,
   discount: AppliedDiscount | null,
@@ -74,10 +86,11 @@ export function CheckoutForm({ event }: CheckoutFormProps) {
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [isRedirecting, setIsRedirecting] = useState(false)
 
-  // Check if user returned from cancelled PayPal payment
+  // Map of ticketTypeId -> AttendeeFormState[]
+  const [attendeesByType, setAttendeesByType] = useState<Record<string, AttendeeFormState[]>>({})
+
   const wasCancelled = searchParams.get('cancelled') === 'true'
 
-  // Check if user is authenticated
   const isAuthenticated = status === 'authenticated'
   const isLoadingAuth = status === 'loading'
 
@@ -166,6 +179,65 @@ export function CheckoutForm({ event }: CheckoutFormProps) {
     [selectedItems]
   )
 
+  // Keep attendeesByType in sync when quantities change
+  useEffect(() => {
+    setAttendeesByType((current) => {
+      const updated: Record<string, AttendeeFormState[]> = {}
+
+      for (const item of selectedItems) {
+        const existing = current[item.ticketTypeId] ?? []
+        const needed = item.quantity
+
+        if (existing.length >= needed) {
+          // Trim extras
+          updated[item.ticketTypeId] = existing.slice(0, needed)
+        } else {
+          // Add empty slots for new tickets
+          const added = Array.from({ length: needed - existing.length }, emptyAttendee)
+          updated[item.ticketTypeId] = [...existing, ...added]
+        }
+      }
+
+      return updated
+    })
+  }, [selectedItems])
+
+  // Pre-fill first attendee slot of the first ticket type with buyer info
+  useEffect(() => {
+    if (selectedItems.length === 0) return
+
+    const firstTypeId = selectedItems[0].ticketTypeId
+
+    setAttendeesByType((current) => {
+      const slots = current[firstTypeId]
+      if (!slots || slots.length === 0) return current
+
+      // Only auto-update if the slot looks empty or still matches old buyer info
+      const first = slots[0]
+      const looksUnedited =
+        first.firstName === '' ||
+        first.firstName === buyer.firstName
+
+      if (!looksUnedited) return current
+
+      return {
+        ...current,
+        [firstTypeId]: [
+          {
+            ...first,
+            firstName: buyer.firstName,
+            lastName: buyer.lastName,
+            email: buyer.email,
+            title: buyer.title,
+            organization: buyer.organization,
+          },
+          ...slots.slice(1),
+        ],
+      }
+    })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [buyer.firstName, buyer.lastName, buyer.email, buyer.title, buyer.organization])
+
   useEffect(() => {
     if (discount?.discountType === 'INVOICE') {
       setPaymentMethod('INVOICE')
@@ -186,6 +258,20 @@ export function CheckoutForm({ event }: CheckoutFormProps) {
     }))
   }
 
+  function updateAttendeeField(
+    ticketTypeId: string,
+    index: number,
+    field: keyof AttendeeFormState,
+    value: string
+  ) {
+    setAttendeesByType((current) => {
+      const slots = current[ticketTypeId] ? [...current[ticketTypeId]] : []
+      if (!slots[index]) return current
+      slots[index] = { ...slots[index], [field]: value }
+      return { ...current, [ticketTypeId]: slots }
+    })
+  }
+
   async function handleSubmit(eventForm: FormEvent<HTMLFormElement>) {
     eventForm.preventDefault()
 
@@ -197,6 +283,19 @@ export function CheckoutForm({ event }: CheckoutFormProps) {
     if (!buyer.firstName || !buyer.lastName || !buyer.email) {
       setSubmitError('First name, last name, and email are required')
       return
+    }
+
+    // Validate all attendee slots are filled
+    for (const item of selectedItems) {
+      const slots = attendeesByType[item.ticketTypeId] ?? []
+      for (let i = 0; i < item.quantity; i++) {
+        const a = slots[i]
+        if (!a || !a.firstName || !a.lastName || !a.email) {
+          const ticketName = ticketTypes.find((t) => t.id === item.ticketTypeId)?.name ?? 'ticket'
+          setSubmitError(`Please fill in all attendee details for "${ticketName}" (ticket ${i + 1})`)
+          return
+        }
+      }
     }
 
     setIsSubmitting(true)
@@ -213,6 +312,7 @@ export function CheckoutForm({ event }: CheckoutFormProps) {
           items: selectedItems.map((item) => ({
             ticketTypeId: item.ticketTypeId,
             quantity: item.quantity,
+            attendees: (attendeesByType[item.ticketTypeId] ?? []).slice(0, item.quantity),
           })),
           buyer,
           discountCode: discount?.code,
@@ -248,7 +348,6 @@ export function CheckoutForm({ event }: CheckoutFormProps) {
         // Check if PayPal redirect is needed
         if (payData.checkout?.type === 'redirect' && payData.checkout?.approvalUrl) {
           setIsRedirecting(true)
-          // Redirect to PayPal for payment approval
           window.location.href = payData.checkout.approvalUrl
           return
         }
@@ -446,6 +545,120 @@ export function CheckoutForm({ event }: CheckoutFormProps) {
             </div>
           </CardContent>
         </Card>
+
+        {/* Per-ticket attendee information */}
+        {selectedItems.length > 0 && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg">Attendee Information</CardTitle>
+              <p className="text-sm text-gray-500">
+                Please provide details for each ticket holder. The first ticket is pre-filled with your buyer information.
+              </p>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              {selectedItems.map((item) => {
+                const ticketType = ticketTypes.find((t) => t.id === item.ticketTypeId)
+                const slots = attendeesByType[item.ticketTypeId] ?? []
+
+                return (
+                  <div key={item.ticketTypeId} className="space-y-4">
+                    {Array.from({ length: item.quantity }, (_, i) => {
+                      const attendee = slots[i] ?? emptyAttendee()
+                      const label =
+                        item.quantity > 1
+                          ? `${ticketType?.name ?? 'Ticket'} #${i + 1}`
+                          : (ticketType?.name ?? 'Ticket')
+
+                      return (
+                        <div
+                          key={`${item.ticketTypeId}-${i}`}
+                          className="rounded-lg border border-gray-200 p-4"
+                        >
+                          <p className="mb-3 text-sm font-medium text-gray-700">{label}</p>
+                          <div className="grid gap-3 sm:grid-cols-2">
+                            <div className="space-y-1">
+                              <Label
+                                htmlFor={`attendee-${item.ticketTypeId}-${i}-first-name`}
+                                required
+                              >
+                                First Name
+                              </Label>
+                              <Input
+                                id={`attendee-${item.ticketTypeId}-${i}-first-name`}
+                                value={attendee.firstName}
+                                onChange={(e) =>
+                                  updateAttendeeField(item.ticketTypeId, i, 'firstName', e.target.value)
+                                }
+                                required
+                              />
+                            </div>
+                            <div className="space-y-1">
+                              <Label
+                                htmlFor={`attendee-${item.ticketTypeId}-${i}-last-name`}
+                                required
+                              >
+                                Last Name
+                              </Label>
+                              <Input
+                                id={`attendee-${item.ticketTypeId}-${i}-last-name`}
+                                value={attendee.lastName}
+                                onChange={(e) =>
+                                  updateAttendeeField(item.ticketTypeId, i, 'lastName', e.target.value)
+                                }
+                                required
+                              />
+                            </div>
+                            <div className="space-y-1 sm:col-span-2">
+                              <Label
+                                htmlFor={`attendee-${item.ticketTypeId}-${i}-email`}
+                                required
+                              >
+                                Email
+                              </Label>
+                              <Input
+                                id={`attendee-${item.ticketTypeId}-${i}-email`}
+                                type="email"
+                                value={attendee.email}
+                                onChange={(e) =>
+                                  updateAttendeeField(item.ticketTypeId, i, 'email', e.target.value)
+                                }
+                                required
+                              />
+                            </div>
+                            <div className="space-y-1">
+                              <Label htmlFor={`attendee-${item.ticketTypeId}-${i}-title`}>
+                                Title
+                              </Label>
+                              <Input
+                                id={`attendee-${item.ticketTypeId}-${i}-title`}
+                                value={attendee.title}
+                                onChange={(e) =>
+                                  updateAttendeeField(item.ticketTypeId, i, 'title', e.target.value)
+                                }
+                              />
+                            </div>
+                            <div className="space-y-1">
+                              <Label htmlFor={`attendee-${item.ticketTypeId}-${i}-organization`}>
+                                Organization
+                              </Label>
+                              <Input
+                                id={`attendee-${item.ticketTypeId}-${i}-organization`}
+                                value={attendee.organization}
+                                onChange={(e) =>
+                                  updateAttendeeField(item.ticketTypeId, i, 'organization', e.target.value)
+                                }
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )
+              })}
+            </CardContent>
+          </Card>
+        )}
       </div>
 
       <div className="space-y-6 lg:col-span-1">

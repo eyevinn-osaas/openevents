@@ -220,6 +220,7 @@ async function handleCaptureCompleted(event: PayPalWebhookEvent) {
           unitPrice: Number(item.unitPrice),
           totalPrice: Number(item.totalPrice),
           currency: latestOrder.currency,
+          attendees: Array.isArray(item.attendeeData) ? (item.attendeeData as unknown as import('@/lib/orders').AttendeeData[]) : undefined,
         }))
       )
 
