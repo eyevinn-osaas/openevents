@@ -245,6 +245,86 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
   }
 }
 
+export async function DELETE(_request: NextRequest, context: RouteContext) {
+  try {
+    const user = await requireRole('ORGANIZER')
+    const { id } = await context.params
+
+    const existingEvent = await prisma.event.findUnique({
+      where: { id },
+      include: {
+        organizer: {
+          select: {
+            userId: true,
+          },
+        },
+      },
+    })
+
+    if (!existingEvent) {
+      return NextResponse.json({ error: 'Event not found' }, { status: 404 })
+    }
+
+    if (existingEvent.organizer.userId !== user.id) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
+
+    if (existingEvent.status === 'PUBLISHED') {
+      return NextResponse.json(
+        { error: 'Published events cannot be deleted. Cancel the event first.' },
+        { status: 400 }
+      )
+    }
+
+    if (existingEvent.status === 'COMPLETED') {
+      return NextResponse.json(
+        { error: 'Completed events cannot be deleted' },
+        { status: 400 }
+      )
+    }
+
+    // For cancelled events, check for pending refunds
+    if (existingEvent.status === 'CANCELLED') {
+      const pendingRefunds = await prisma.order.count({
+        where: {
+          eventId: id,
+          refundStatus: 'PENDING',
+        },
+      })
+
+      if (pendingRefunds > 0) {
+        return NextResponse.json(
+          { error: `Cannot delete event with ${pendingRefunds} pending refund(s). Process refunds first.` },
+          { status: 400 }
+        )
+      }
+    }
+
+    // Delete event (cascades to related records via Prisma schema)
+    await prisma.event.delete({
+      where: { id },
+    })
+
+    return NextResponse.json({ message: 'Event deleted successfully' })
+  } catch (error) {
+    if (error instanceof Error) {
+      if (error.message === 'Unauthorized') {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      }
+
+      if (error.message.includes('Forbidden')) {
+        return NextResponse.json({ error: error.message }, { status: 403 })
+      }
+    }
+
+    console.error('Delete event failed:', error)
+    return NextResponse.json(
+      { error: 'Failed to delete event' },
+      { status: 500 }
+    )
+  }
+}
+
 export async function GET(_request: NextRequest, context: RouteContext) {
   try {
     const { id: slug } = await context.params

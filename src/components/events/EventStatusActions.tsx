@@ -12,9 +12,9 @@ type EventStatusActionsProps = {
 export function EventStatusActions({ eventId, status }: EventStatusActionsProps) {
   const router = useRouter()
   const [error, setError] = useState<string | null>(null)
-  const [loadingAction, setLoadingAction] = useState<'unpublish' | 'cancel' | null>(null)
+  const [loadingAction, setLoadingAction] = useState<'unpublish' | 'cancel' | 'delete' | null>(null)
 
-  async function runAction(action: 'unpublish' | 'cancel') {
+  async function runAction(action: 'unpublish' | 'cancel' | 'delete') {
     setLoadingAction(action)
     setError(null)
 
@@ -31,7 +31,10 @@ export function EventStatusActions({ eventId, status }: EventStatusActionsProps)
 
       if (action === 'cancel') {
         const confirmed = window.confirm('Cancel this event? This will notify ticket holders.')
-        if (!confirmed) return
+        if (!confirmed) {
+          setLoadingAction(null)
+          return
+        }
 
         const res = await fetch(`/api/events/${eventId}/cancel`, {
           method: 'POST',
@@ -40,6 +43,23 @@ export function EventStatusActions({ eventId, status }: EventStatusActionsProps)
         })
         const json = await res.json()
         if (!res.ok) throw new Error(json?.error || 'Failed to cancel event')
+      }
+
+      if (action === 'delete') {
+        const confirmed = window.confirm('Delete this event? This action cannot be undone.')
+        if (!confirmed) {
+          setLoadingAction(null)
+          return
+        }
+
+        const res = await fetch(`/api/events/${eventId}`, {
+          method: 'DELETE',
+        })
+        const json = await res.json()
+        if (!res.ok) throw new Error(json?.error || 'Failed to delete event')
+
+        router.push('/dashboard/events')
+        return
       }
 
       router.refresh()
@@ -70,6 +90,11 @@ export function EventStatusActions({ eventId, status }: EventStatusActionsProps)
         {status === 'PUBLISHED' ? (
           <Button variant="destructive" isLoading={loadingAction === 'cancel'} onClick={() => runAction('cancel')}>
             Cancel Event
+          </Button>
+        ) : null}
+        {status === 'DRAFT' || status === 'CANCELLED' ? (
+          <Button variant="destructive" isLoading={loadingAction === 'delete'} onClick={() => runAction('delete')}>
+            Delete Event
           </Button>
         ) : null}
       </div>
