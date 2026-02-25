@@ -187,7 +187,9 @@ export async function GET(request: NextRequest) {
     const endDateParam = searchParams.get('endDate')
 
     const page = Math.max(Number(searchParams.get('page') || '1'), 1)
-    const pageSize = Math.min(Math.max(Number(searchParams.get('pageSize') || '10'), 1), 50)
+    // Support both 'limit' and 'pageSize' parameters; default 20, max 100
+    const limitParam = searchParams.get('limit') || searchParams.get('pageSize') || '20'
+    const pageSize = Math.min(Math.max(Number(limitParam), 1), 100)
 
     const where: Prisma.EventWhereInput = {
       status: 'PUBLISHED',
