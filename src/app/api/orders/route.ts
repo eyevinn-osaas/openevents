@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { revalidateTag } from 'next/cache'
 import { Prisma } from '@prisma/client'
 import { requireAuth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
@@ -363,6 +364,9 @@ export async function POST(request: NextRequest) {
         isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
       }
     )
+
+    revalidateTag('event-analytics')
+    revalidateTag('dashboard-analytics')
 
     if (createdOrder.status === 'PAID') {
       await sendOrderConfirmationEmail(createdOrder.buyerEmail, {

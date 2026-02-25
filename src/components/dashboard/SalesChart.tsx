@@ -21,8 +21,8 @@ export function SalesChart({ title = 'Sales Breakdown', data, formatter, currenc
         <p className="mt-3 text-sm text-gray-500">No sales data yet.</p>
       ) : (
         <div className="mt-4 space-y-3">
-          {data.map((item) => (
-            <div key={item.label}>
+          {data.map((item, i) => (
+            <div key={i}>
               <div className="mb-1 flex items-center justify-between text-sm">
                 <span className="text-gray-700">{item.label}</span>
                 <span className="font-medium text-gray-900">{formatValue(item.value)}</span>

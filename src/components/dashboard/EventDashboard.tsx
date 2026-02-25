@@ -3,7 +3,6 @@ import { EventStatus } from '@prisma/client'
 import { Download } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { EventStatusBadge } from '@/components/dashboard/EventStatusBadge'
-import { SalesChart } from '@/components/dashboard/SalesChart'
 import { SalesTrendChart } from '@/components/dashboard/SalesTrendChart'
 import { formatCurrency, formatDateTime } from '@/lib/utils'
 
@@ -128,29 +127,55 @@ export function EventDashboard({ event, stats }: EventDashboardProps) {
         data={stats.dailySales}
       />
 
-      {/* Ticket type breakdowns — side by side */}
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        <SalesChart
-          title="Revenue by Ticket Type"
-          data={stats.ticketsByType.map((item) => ({ label: item.name, value: item.revenue }))}
-        />
-        <SalesChart
-          title="Tickets Sold by Type"
-          data={stats.ticketsByType.map((item) => ({ label: item.name, value: item.sold }))}
-          formatter={(v) => String(v)}
-        />
-      </div>
+      {/* Ticket type breakdown table */}
+      {stats.ticketsByType.length > 0 && (
+        <section className="rounded-xl border border-gray-200 bg-white p-6">
+          <h3 className="text-lg font-semibold text-gray-900">Ticket Types</h3>
+          <div className="mt-4 overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-gray-100">
+                  <th className="pb-3 text-left font-medium text-gray-500">Type</th>
+                  <th className="pb-3 text-right font-medium text-gray-500">Sold</th>
+                  <th className="pb-3 text-right font-medium text-gray-500">Remaining</th>
+                  <th className="pb-3 text-right font-medium text-gray-500">Revenue</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {stats.ticketsByType.map((tt, i) => (
+                  <tr key={i}>
+                    <td className="py-3 text-gray-900">{tt.name}</td>
+                    <td className="py-3 text-right text-gray-700">{tt.sold}</td>
+                    <td className="py-3 text-right text-gray-700">
+                      {tt.remaining === null ? '∞' : tt.remaining}
+                    </td>
+                    <td className="py-3 text-right font-medium text-gray-900">
+                      {formatCurrency(tt.revenue)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
 
-      {/* Order summary */}
+      {/* Order breakdown */}
       <section className="rounded-xl border border-gray-200 bg-white p-6">
-        <h3 className="text-lg font-semibold text-gray-900">Order Summary</h3>
-        <ul className="mt-4 space-y-2 text-sm text-gray-700">
-          <li>{`Paid: ${stats.paidOrders}`}</li>
-          <li>{`Pending invoice: ${stats.pendingInvoiceOrders}`}</li>
-          <li>{`Cancelled: ${stats.cancelledOrders}`}</li>
-          <li>{`Refunded: ${stats.refundedOrders}`}</li>
-          <li>{`Total event orders: ${stats.totalOrders}`}</li>
-        </ul>
+        <h3 className="text-lg font-semibold text-gray-900">Order Breakdown</h3>
+        <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+          {[
+            { label: 'Paid', value: stats.paidOrders },
+            { label: 'Pending Invoice', value: stats.pendingInvoiceOrders },
+            { label: 'Cancelled', value: stats.cancelledOrders },
+            { label: 'Refunded', value: stats.refundedOrders },
+          ].map(({ label, value }) => (
+            <div key={label} className="rounded-lg bg-gray-50 p-4 text-center">
+              <p className="text-2xl font-semibold text-gray-900">{value}</p>
+              <p className="mt-1 text-xs text-gray-500">{label}</p>
+            </div>
+          ))}
+        </div>
       </section>
     </div>
   )

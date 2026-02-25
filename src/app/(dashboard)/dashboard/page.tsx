@@ -8,7 +8,7 @@ import { SalesChart } from '@/components/dashboard/SalesChart'
 import { SalesTrendChart } from '@/components/dashboard/SalesTrendChart'
 import { getDashboardAnalytics } from '@/lib/analytics/dashboard-analytics'
 
-const revenueStatuses: OrderStatus[] = ['PAID', 'PENDING_INVOICE']
+const revenueStatuses: OrderStatus[] = ['PAID']
 
 export default async function DashboardHomePage() {
   const { organizerProfile } = await requireOrganizerProfile()

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { revalidateTag } from 'next/cache'
 import { Prisma } from '@prisma/client'
 import { z } from 'zod'
 import { requireAuth } from '@/lib/auth'
@@ -262,6 +263,9 @@ export async function POST(request: NextRequest, context: RouteContext) {
         isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
       }
     )
+
+    revalidateTag('event-analytics')
+    revalidateTag('dashboard-analytics')
 
     return NextResponse.json({
       order: cancelledOrder,

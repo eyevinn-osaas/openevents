@@ -7,7 +7,7 @@ type RouteContext = {
   params: Promise<{ id: string }>
 }
 
-const revenueStatuses: OrderStatus[] = ['PAID', 'PENDING_INVOICE']
+const revenueStatuses: OrderStatus[] = ['PAID']
 
 export async function GET(_request: Request, context: RouteContext) {
   try {

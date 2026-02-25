@@ -68,14 +68,6 @@ export function Header() {
             )}
             {canAccessMyEvents && (
               <Link
-                href="/dashboard/scan"
-                className="inline-flex min-w-[132px] items-center justify-center rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700"
-              >
-                Scan Tickets
-              </Link>
-            )}
-            {canAccessMyEvents && (
-              <Link
                 href="/my-events"
                 className="text-gray-600 hover:text-gray-900 font-medium"
               >

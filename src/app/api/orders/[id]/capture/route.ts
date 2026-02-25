@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { revalidateTag } from 'next/cache'
 import { Prisma, PaymentMethod } from '@prisma/client'
 import { requireAuth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
@@ -271,6 +272,9 @@ export async function GET(request: NextRequest, context: RouteContext) {
       totalAmount: `${paidOrder.totalAmount.toString()} ${paidOrder.currency}`,
       buyerName: `${paidOrder.buyerFirstName} ${paidOrder.buyerLastName}`,
     })
+
+    revalidateTag('event-analytics')
+    revalidateTag('dashboard-analytics')
 
     // Redirect to confirmation page
     return NextResponse.redirect(`${APP_URL}/orders/${paidOrder.orderNumber}/confirmation`)

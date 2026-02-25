@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { revalidateTag } from 'next/cache'
 import { Prisma, PaymentMethod } from '@prisma/client'
 import { z } from 'zod'
 import { requireAuth } from '@/lib/auth'
@@ -131,6 +132,19 @@ export async function POST(request: NextRequest, context: RouteContext) {
 
     // Handle invoice payment method - no PayPal needed
     if (input.paymentMethod === 'INVOICE' || order.paymentMethod === 'INVOICE') {
+      // Ensure the order is in PENDING_INVOICE status
+      if (order.status === 'PENDING') {
+        await prisma.order.update({
+          where: { id: orderId },
+          data: {
+            status: 'PENDING_INVOICE',
+            paymentMethod: PaymentMethod.INVOICE,
+            expiresAt: null,
+          },
+        })
+      }
+      revalidateTag('event-analytics')
+      revalidateTag('dashboard-analytics')
       // Invoice orders stay in PENDING_INVOICE status until manually marked as paid
       return NextResponse.json({
         order: orderForResponse,
@@ -316,6 +330,9 @@ export async function POST(request: NextRequest, context: RouteContext) {
       totalAmount: `${paidOrder.totalAmount.toString()} ${paidOrder.currency}`,
       buyerName: `${paidOrder.buyerFirstName} ${paidOrder.buyerLastName}`,
     })
+
+    revalidateTag('event-analytics')
+    revalidateTag('dashboard-analytics')
 
     return NextResponse.json({
       order: paidOrder,

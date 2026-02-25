@@ -2,7 +2,7 @@ import { unstable_cache } from 'next/cache'
 import { prisma } from '@/lib/db'
 import { OrderStatus } from '@prisma/client'
 
-const revenueStatuses: OrderStatus[] = ['PAID', 'PENDING_INVOICE']
+const revenueStatuses: OrderStatus[] = ['PAID']
 const refundStatuses: OrderStatus[] = ['REFUNDED', 'PARTIALLY_REFUNDED']
 
 export type EventAnalytics = {
