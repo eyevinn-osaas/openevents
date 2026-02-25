@@ -192,6 +192,7 @@ export async function GET(request: NextRequest) {
     const where: Prisma.EventWhereInput = {
       status: 'PUBLISHED',
       visibility: 'PUBLIC',
+      deletedAt: null, // Exclude soft-deleted events
     }
 
     if (category) {

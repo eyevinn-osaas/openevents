@@ -33,7 +33,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       },
     })
 
-    if (!existingEvent) {
+    if (!existingEvent || existingEvent.deletedAt) {
       return NextResponse.json({ error: 'Event not found' }, { status: 404 })
     }
 
@@ -245,7 +245,7 @@ export async function DELETE(_request: NextRequest, context: RouteContext) {
       },
     })
 
-    if (!existingEvent) {
+    if (!existingEvent || existingEvent.deletedAt) {
       return NextResponse.json({ error: 'Event not found' }, { status: 404 })
     }
 
@@ -284,9 +284,10 @@ export async function DELETE(_request: NextRequest, context: RouteContext) {
       }
     }
 
-    // Delete event (cascades to related records via Prisma schema)
-    await prisma.event.delete({
+    // Soft-delete event (set deletedAt timestamp)
+    await prisma.event.update({
       where: { id },
+      data: { deletedAt: new Date() },
     })
 
     return NextResponse.json({ message: 'Event deleted successfully' })
@@ -347,7 +348,7 @@ export async function GET(_request: NextRequest, context: RouteContext) {
       },
     })
 
-    if (!event) {
+    if (!event || event.deletedAt) {
       return NextResponse.json({ error: 'Event not found' }, { status: 404 })
     }
 
