@@ -1,4 +1,4 @@
-import { OrderStatus } from '@prisma/client'
+import { OrderStatus, Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { requireOrganizerProfile } from '@/lib/dashboard/organizer'
 import { DashboardStats } from '@/components/dashboard/DashboardStats'
@@ -11,33 +11,46 @@ import { getDashboardAnalytics } from '@/lib/analytics/dashboard-analytics'
 const revenueStatuses: OrderStatus[] = ['PAID']
 
 export default async function DashboardHomePage() {
-  const { organizerProfile } = await requireOrganizerProfile()
+  const { organizerProfile, isSuperAdmin, user } = await requireOrganizerProfile()
 
   const now = new Date()
+
+  // Build where clause based on role - super admins see all events
+  const eventWhere: Prisma.EventWhereInput = isSuperAdmin
+    ? { deletedAt: null }
+    : { organizerId: organizerProfile!.id, deletedAt: null }
+
+  const ticketWhere: Prisma.TicketTypeWhereInput = isSuperAdmin
+    ? { event: { deletedAt: null } }
+    : { event: { organizerId: organizerProfile!.id, deletedAt: null } }
+
+  const orderWhere: Prisma.OrderWhereInput = isSuperAdmin
+    ? { event: { deletedAt: null } }
+    : { event: { organizerId: organizerProfile!.id, deletedAt: null } }
 
   // Run cached analytics and live dashboard data in parallel
   const [analytics, [eventsByStatus, ticketAgg, revenueAgg, upcomingEvents, recentOrders]] =
     await Promise.all([
-      getDashboardAnalytics(organizerProfile.id),
+      getDashboardAnalytics(isSuperAdmin ? null : organizerProfile!.id),
       prisma.$transaction([
         prisma.event.findMany({
-          where: { organizerId: organizerProfile.id },
+          where: eventWhere,
           select: { status: true },
         }),
         prisma.ticketType.aggregate({
-          where: { event: { organizerId: organizerProfile.id } },
+          where: ticketWhere,
           _sum: { soldCount: true },
         }),
         prisma.order.aggregate({
           where: {
-            event: { organizerId: organizerProfile.id },
+            ...orderWhere,
             status: { in: revenueStatuses },
           },
           _sum: { totalAmount: true },
         }),
         prisma.event.findMany({
           where: {
-            organizerId: organizerProfile.id,
+            ...eventWhere,
             startDate: { gte: now },
           },
           select: { id: true, slug: true, title: true, startDate: true, status: true },
@@ -45,7 +58,7 @@ export default async function DashboardHomePage() {
           take: 6,
         }),
         prisma.order.findMany({
-          where: { event: { organizerId: organizerProfile.id } },
+          where: orderWhere,
           select: {
             id: true,
             orderNumber: true,
@@ -76,14 +89,18 @@ export default async function DashboardHomePage() {
     totalRevenue: Number(revenueAgg._sum.totalAmount?.toString() ?? '0'),
   }
 
+  const welcomeName = organizerProfile?.orgName || user.name || 'Admin'
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-3xl font-bold text-gray-900">
-            {`Welcome, ${organizerProfile.orgName}`}
+            {`Welcome, ${welcomeName}`}
           </h1>
-          <p className="text-gray-600">Overview of your events, orders, and revenue.</p>
+          <p className="text-gray-600">
+            {isSuperAdmin ? 'Platform-wide overview of events, orders, and revenue.' : 'Overview of your events, orders, and revenue.'}
+          </p>
         </div>
       </div>
 

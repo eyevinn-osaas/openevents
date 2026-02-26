@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { OrderStatus } from '@prisma/client'
+import { OrderStatus, Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { requireOrganizerProfile } from '@/lib/dashboard/organizer'
 
@@ -7,24 +7,25 @@ const revenueStatuses: OrderStatus[] = ['PAID', 'PENDING_INVOICE']
 
 export async function GET() {
   try {
-    const { organizerProfile } = await requireOrganizerProfile()
+    const { organizerProfile, isSuperAdmin } = await requireOrganizerProfile()
 
     const now = new Date()
 
+    // Build where clause based on role
+    const eventWhere: Prisma.EventWhereInput = isSuperAdmin
+      ? { deletedAt: null }
+      : { organizerId: organizerProfile!.id, deletedAt: null }
+
     const [eventCounts, ticketStats, revenueStats, recentRevenueByEvent] = await prisma.$transaction([
       prisma.event.findMany({
-        where: {
-          organizerId: organizerProfile.id,
-        },
+        where: eventWhere,
         select: {
           status: true,
         },
       }),
       prisma.ticketType.aggregate({
         where: {
-          event: {
-            organizerId: organizerProfile.id,
-          },
+          event: eventWhere,
         },
         _sum: {
           soldCount: true,
@@ -32,9 +33,7 @@ export async function GET() {
       }),
       prisma.order.aggregate({
         where: {
-          event: {
-            organizerId: organizerProfile.id,
-          },
+          event: eventWhere,
           status: {
             in: revenueStatuses,
           },
@@ -49,9 +48,7 @@ export async function GET() {
       prisma.order.groupBy({
         by: ['eventId'],
         where: {
-          event: {
-            organizerId: organizerProfile.id,
-          },
+          event: eventWhere,
           status: {
             in: revenueStatuses,
           },
@@ -85,7 +82,7 @@ export async function GET() {
 
     const upcomingEvents = await prisma.event.count({
       where: {
-        organizerId: organizerProfile.id,
+        ...eventWhere,
         status: 'PUBLISHED',
         startDate: {
           gte: now,

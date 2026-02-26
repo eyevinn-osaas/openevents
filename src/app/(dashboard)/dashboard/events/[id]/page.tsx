@@ -1,6 +1,6 @@
 import { notFound } from 'next/navigation'
 import { prisma } from '@/lib/db'
-import { requireOrganizerProfile } from '@/lib/dashboard/organizer'
+import { requireOrganizerProfile, buildEventWhereClause } from '@/lib/dashboard/organizer'
 import { EventDashboard } from '@/components/dashboard/EventDashboard'
 import { RecentOrders } from '@/components/dashboard/RecentOrders'
 import { getEventAnalytics } from '@/lib/analytics/event-analytics'
@@ -10,11 +10,13 @@ type PageProps = {
 }
 
 export default async function EventDetailDashboardPage({ params }: PageProps) {
-  const { organizerProfile } = await requireOrganizerProfile()
+  const { organizerProfile, isSuperAdmin } = await requireOrganizerProfile()
   const { id } = await params
 
+  const where = buildEventWhereClause(organizerProfile, isSuperAdmin, { id })
+
   const event = await prisma.event.findFirst({
-    where: { id, organizerId: organizerProfile.id },
+    where,
     select: {
       id: true,
       slug: true,

@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import { EventStatus, Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
-import { requireOrganizerProfile } from '@/lib/dashboard/organizer'
+import { requireOrganizerProfile, buildEventWhereClause } from '@/lib/dashboard/organizer'
 import { EventsTable } from '@/components/dashboard/EventsTable'
 
 type PageProps = {
@@ -14,27 +14,26 @@ function param(value: string | string[] | undefined): string | undefined {
 }
 
 export default async function OrganizerEventsPage({ searchParams }: PageProps) {
-  const { organizerProfile } = await requireOrganizerProfile()
+  const { organizerProfile, isSuperAdmin } = await requireOrganizerProfile()
   const params = await searchParams
 
   const status = param(params.status) as EventStatus | undefined
   const query = param(params.q)
 
-  const where: Prisma.EventWhereInput = {
-    organizerId: organizerProfile.id,
-    deletedAt: null, // Exclude soft-deleted events
-  }
+  const additionalWhere: Prisma.EventWhereInput = {}
 
   if (status && ['DRAFT', 'PUBLISHED', 'CANCELLED', 'COMPLETED'].includes(status)) {
-    where.status = status
+    additionalWhere.status = status
   }
 
   if (query) {
-    where.title = {
+    additionalWhere.title = {
       contains: query,
       mode: 'insensitive',
     }
   }
+
+  const where = buildEventWhereClause(organizerProfile, isSuperAdmin, additionalWhere)
 
   const events = await prisma.event.findMany({
     where,
@@ -62,8 +61,8 @@ export default async function OrganizerEventsPage({ searchParams }: PageProps) {
     <div className="space-y-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">Your Events</h1>
-          <p className="text-gray-600">Search, filter, and manage all organizer events.</p>
+          <h1 className="text-3xl font-bold text-gray-900">{isSuperAdmin ? 'All Events' : 'Your Events'}</h1>
+          <p className="text-gray-600">{isSuperAdmin ? 'Search, filter, and manage all platform events.' : 'Search, filter, and manage all organizer events.'}</p>
         </div>
         <Link href="/create-event" className="inline-flex rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white">
           Create New Event

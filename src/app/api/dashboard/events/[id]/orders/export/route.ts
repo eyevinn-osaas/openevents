@@ -14,7 +14,7 @@ function csvCell(value: string | number | null) {
 
 export async function GET(request: Request, context: RouteContext) {
   try {
-    const { organizerProfile } = await requireOrganizerProfile()
+    const { organizerProfile, isSuperAdmin } = await requireOrganizerProfile()
     const { id } = await context.params
 
     const { searchParams } = new URL(request.url)
@@ -24,11 +24,14 @@ export async function GET(request: Request, context: RouteContext) {
     const dateFrom = searchParams.get('dateFrom') || undefined
     const dateTo = searchParams.get('dateTo') || undefined
 
+    // Build event where clause for ownership check
+    const eventWhere: Prisma.EventWhereInput = isSuperAdmin
+      ? { id, deletedAt: null }
+      : { id, organizerId: organizerProfile!.id, deletedAt: null }
+
     const where: Prisma.OrderWhereInput = {
       eventId: id,
-      event: {
-        organizerId: organizerProfile.id,
-      },
+      event: eventWhere,
     }
 
     if (status && ['PENDING', 'PENDING_INVOICE', 'PAID', 'CANCELLED', 'REFUNDED', 'PARTIALLY_REFUNDED'].includes(status)) {

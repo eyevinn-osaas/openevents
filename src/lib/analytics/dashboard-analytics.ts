@@ -1,6 +1,6 @@
 import { unstable_cache } from 'next/cache'
 import { prisma } from '@/lib/db'
-import { OrderStatus } from '@prisma/client'
+import { OrderStatus, Prisma } from '@prisma/client'
 
 const revenueStatuses: OrderStatus[] = ['PAID']
 
@@ -9,16 +9,21 @@ export type DashboardAnalytics = {
   dailySales: Array<{ date: string; revenue: number }>
 }
 
-async function fetchDashboardAnalytics(organizerId: string): Promise<DashboardAnalytics> {
+async function fetchDashboardAnalytics(organizerId: string | null): Promise<DashboardAnalytics> {
   const now = new Date()
   const thirtyDaysAgo = new Date(now)
   thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 29)
+
+  // Build where clause - null organizerId means platform-wide (super admin)
+  const eventWhere: Prisma.EventWhereInput = organizerId
+    ? { organizerId, deletedAt: null }
+    : { deletedAt: null }
 
   const [topRevenue, trendOrders] = await prisma.$transaction([
     prisma.order.groupBy({
       by: ['eventId'],
       where: {
-        event: { organizerId },
+        event: eventWhere,
         status: { in: revenueStatuses },
       },
       _sum: { totalAmount: true },
@@ -27,7 +32,7 @@ async function fetchDashboardAnalytics(organizerId: string): Promise<DashboardAn
     }),
     prisma.order.findMany({
       where: {
-        event: { organizerId },
+        event: eventWhere,
         status: { in: revenueStatuses },
         createdAt: { gte: thirtyDaysAgo },
       },

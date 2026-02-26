@@ -3,7 +3,7 @@ import { revalidatePath } from 'next/cache'
 import { notFound } from 'next/navigation'
 import { OrderStatus, PaymentMethod, Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
-import { requireOrganizerProfile } from '@/lib/dashboard/organizer'
+import { requireOrganizerProfile, buildEventWhereClause, canAccessEvent } from '@/lib/dashboard/organizer'
 import { OrderFilters } from '@/components/dashboard/OrderFilters'
 import { OrdersTable } from '@/components/dashboard/OrdersTable'
 
@@ -18,7 +18,7 @@ function readParam(value: string | string[] | undefined): string | undefined {
 }
 
 export default async function EventOrdersPage({ params, searchParams }: PageProps) {
-  const { organizerProfile } = await requireOrganizerProfile()
+  const { organizerProfile, isSuperAdmin } = await requireOrganizerProfile()
   const { id } = await params
   const qs = await searchParams
 
@@ -28,11 +28,10 @@ export default async function EventOrdersPage({ params, searchParams }: PageProp
   const dateFrom = readParam(qs.dateFrom)
   const dateTo = readParam(qs.dateTo)
 
+  const eventWhere = buildEventWhereClause(organizerProfile, isSuperAdmin, { id })
+
   const event = await prisma.event.findFirst({
-    where: {
-      id,
-      organizerId: organizerProfile.id,
-    },
+    where: eventWhere,
     select: {
       id: true,
       title: true,
@@ -43,20 +42,20 @@ export default async function EventOrdersPage({ params, searchParams }: PageProp
     notFound()
   }
 
-  const where: Prisma.OrderWhereInput = {
+  const orderWhere: Prisma.OrderWhereInput = {
     eventId: id,
   }
 
   if (status && ['PENDING', 'PENDING_INVOICE', 'PAID', 'CANCELLED', 'REFUNDED', 'PARTIALLY_REFUNDED'].includes(status)) {
-    where.status = status
+    orderWhere.status = status
   }
 
   if (paymentMethod && ['PAYPAL', 'INVOICE', 'FREE'].includes(paymentMethod)) {
-    where.paymentMethod = paymentMethod
+    orderWhere.paymentMethod = paymentMethod
   }
 
   if (search) {
-    where.OR = [
+    orderWhere.OR = [
       { orderNumber: { contains: search, mode: 'insensitive' } },
       { buyerEmail: { contains: search, mode: 'insensitive' } },
       { buyerFirstName: { contains: search, mode: 'insensitive' } },
@@ -65,14 +64,14 @@ export default async function EventOrdersPage({ params, searchParams }: PageProp
   }
 
   if (dateFrom || dateTo) {
-    where.createdAt = {
+    orderWhere.createdAt = {
       gte: dateFrom ? new Date(`${dateFrom}T00:00:00.000Z`) : undefined,
       lte: dateTo ? new Date(`${dateTo}T23:59:59.999Z`) : undefined,
     }
   }
 
   const orders = await prisma.order.findMany({
-    where,
+    where: orderWhere,
     select: {
       id: true,
       orderNumber: true,
@@ -93,17 +92,21 @@ export default async function EventOrdersPage({ params, searchParams }: PageProp
   async function applyBulkAction(formData: FormData) {
     'use server'
 
-    const { organizerProfile: profile } = await requireOrganizerProfile()
+    const { event: eventCheck, isSuperAdmin, organizerProfile } = await canAccessEvent(id)
+    if (!eventCheck) return
+
     const action = String(formData.get('bulkAction') || '')
 
     if (action !== 'cancel_all_filtered') return
 
+    const eventWhere: Prisma.EventWhereInput = isSuperAdmin
+      ? { id, deletedAt: null }
+      : { id, organizerId: organizerProfile!.id, deletedAt: null }
+
     await prisma.order.updateMany({
       where: {
         eventId: id,
-        event: {
-          organizerId: profile.id,
-        },
+        event: eventWhere,
         status: {
           in: ['PENDING', 'PENDING_INVOICE'],
         },

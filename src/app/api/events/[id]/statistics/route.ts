@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { OrderStatus } from '@prisma/client'
 import { prisma } from '@/lib/db'
-import { requireOrganizerProfile } from '@/lib/dashboard/organizer'
+import { requireOrganizerProfile, buildEventWhereClause } from '@/lib/dashboard/organizer'
 
 type RouteContext = {
   params: Promise<{ id: string }>
@@ -11,14 +11,13 @@ const revenueStatuses: OrderStatus[] = ['PAID']
 
 export async function GET(_request: Request, context: RouteContext) {
   try {
-    const { organizerProfile } = await requireOrganizerProfile()
+    const { organizerProfile, isSuperAdmin } = await requireOrganizerProfile()
     const { id } = await context.params
 
+    const eventWhere = buildEventWhereClause(organizerProfile, isSuperAdmin, { id })
+
     const event = await prisma.event.findFirst({
-      where: {
-        id,
-        organizerId: organizerProfile.id,
-      },
+      where: eventWhere,
       select: {
         id: true,
         title: true,

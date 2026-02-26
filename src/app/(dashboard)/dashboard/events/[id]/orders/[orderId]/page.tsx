@@ -1,8 +1,9 @@
 import { revalidatePath } from 'next/cache'
 import { notFound } from 'next/navigation'
+import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { sendOrderConfirmationEmail } from '@/lib/email'
-import { requireOrganizerProfile } from '@/lib/dashboard/organizer'
+import { requireOrganizerProfile, canAccessEvent } from '@/lib/dashboard/organizer'
 import { OrderDetailView } from '@/components/dashboard/OrderDetailView'
 
 type PageProps = {
@@ -10,16 +11,18 @@ type PageProps = {
 }
 
 export default async function EventOrderDetailPage({ params }: PageProps) {
-  const { organizerProfile } = await requireOrganizerProfile()
+  const { organizerProfile, isSuperAdmin } = await requireOrganizerProfile()
   const { id, orderId } = await params
+
+  const eventWhere: Prisma.EventWhereInput = isSuperAdmin
+    ? { id, deletedAt: null }
+    : { id, organizerId: organizerProfile!.id, deletedAt: null }
 
   const order = await prisma.order.findFirst({
     where: {
       id: orderId,
       eventId: id,
-      event: {
-        organizerId: organizerProfile.id,
-      },
+      event: eventWhere,
     },
     include: {
       items: {
@@ -41,16 +44,22 @@ export default async function EventOrderDetailPage({ params }: PageProps) {
   async function refundAction(formData: FormData) {
     'use server'
 
-    const { organizerProfile: profile } = await requireOrganizerProfile()
+    const { event: eventCheck, isSuperAdmin, organizerProfile } = await canAccessEvent(id)
+    if (!eventCheck) {
+      throw new Error('Event not found')
+    }
+
     const submittedOrderId = String(formData.get('orderId') || '')
+
+    const orderEventWhere: Prisma.EventWhereInput = isSuperAdmin
+      ? { id, deletedAt: null }
+      : { id, organizerId: organizerProfile!.id, deletedAt: null }
 
     const targetOrder = await prisma.order.findFirst({
       where: {
         id: submittedOrderId,
         eventId: id,
-        event: {
-          organizerId: profile.id,
-        },
+        event: orderEventWhere,
       },
       select: {
         id: true,
@@ -77,16 +86,22 @@ export default async function EventOrderDetailPage({ params }: PageProps) {
   async function emailAction(formData: FormData) {
     'use server'
 
-    const { organizerProfile: profile } = await requireOrganizerProfile()
+    const { event: eventCheck, isSuperAdmin, organizerProfile } = await canAccessEvent(id)
+    if (!eventCheck) {
+      throw new Error('Event not found')
+    }
+
     const submittedOrderId = String(formData.get('orderId') || '')
+
+    const orderEventWhere: Prisma.EventWhereInput = isSuperAdmin
+      ? { id, deletedAt: null }
+      : { id, organizerId: organizerProfile!.id, deletedAt: null }
 
     const targetOrder = await prisma.order.findFirst({
       where: {
         id: submittedOrderId,
         eventId: id,
-        event: {
-          organizerId: profile.id,
-        },
+        event: orderEventWhere,
       },
       include: {
         event: {

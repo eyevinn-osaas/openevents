@@ -2,7 +2,7 @@ import { revalidatePath } from 'next/cache'
 import { notFound } from 'next/navigation'
 import { DiscountType, Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
-import { requireOrganizerProfile } from '@/lib/dashboard/organizer'
+import { requireOrganizerProfile, buildEventWhereClause, canAccessEvent } from '@/lib/dashboard/organizer'
 import { DiscountCodeForm } from '@/components/dashboard/DiscountCodeForm'
 import { DiscountCodeList } from '@/components/dashboard/DiscountCodeList'
 
@@ -17,16 +17,15 @@ function readParam(value: string | string[] | undefined): string | undefined {
 }
 
 export default async function DiscountCodesPage({ params, searchParams }: PageProps) {
-  const { organizerProfile } = await requireOrganizerProfile()
+  const { organizerProfile, isSuperAdmin } = await requireOrganizerProfile()
   const { id } = await params
   const qs = await searchParams
   const editId = readParam(qs.edit)
 
+  const where = buildEventWhereClause(organizerProfile, isSuperAdmin, { id })
+
   const event = await prisma.event.findFirst({
-    where: {
-      id,
-      organizerId: organizerProfile.id,
-    },
+    where,
     select: {
       id: true,
       title: true,
@@ -52,12 +51,7 @@ export default async function DiscountCodesPage({ params, searchParams }: PagePr
   async function createDiscountCode(formData: FormData) {
     'use server'
 
-    const { organizerProfile: profile } = await requireOrganizerProfile()
-
-    const eventCheck = await prisma.event.findFirst({
-      where: { id, organizerId: profile.id },
-      select: { id: true },
-    })
+    const { event: eventCheck } = await canAccessEvent(id)
 
     if (!eventCheck) {
       throw new Error('Event not found')
@@ -87,18 +81,23 @@ export default async function DiscountCodesPage({ params, searchParams }: PagePr
   async function updateDiscountCode(formData: FormData) {
     'use server'
 
-    const { organizerProfile: profile } = await requireOrganizerProfile()
+    const { event: eventCheck, isSuperAdmin, organizerProfile } = await canAccessEvent(id)
+    if (!eventCheck) {
+      throw new Error('Event not found')
+    }
+
     const discountCodeId = String(formData.get('discountCodeId') || '')
     if (!discountCodeId) return
 
+    const discountCodeWhere: Prisma.DiscountCodeWhereInput = {
+      id: discountCodeId,
+      event: isSuperAdmin
+        ? { id, deletedAt: null }
+        : { id, organizerId: organizerProfile!.id, deletedAt: null },
+    }
+
     const existing = await prisma.discountCode.findFirst({
-      where: {
-        id: discountCodeId,
-        event: {
-          id,
-          organizerId: profile.id,
-        },
-      },
+      where: discountCodeWhere,
       select: { id: true },
     })
 
@@ -130,17 +129,20 @@ export default async function DiscountCodesPage({ params, searchParams }: PagePr
   async function deleteDiscountCode(formData: FormData) {
     'use server'
 
-    const { organizerProfile: profile } = await requireOrganizerProfile()
+    const { event: eventCheck, isSuperAdmin, organizerProfile } = await canAccessEvent(id)
+    if (!eventCheck) return
+
     const discountCodeId = String(formData.get('discountCodeId') || '')
 
+    const discountCodeWhere: Prisma.DiscountCodeWhereInput = {
+      id: discountCodeId,
+      event: isSuperAdmin
+        ? { id, deletedAt: null }
+        : { id, organizerId: organizerProfile!.id, deletedAt: null },
+    }
+
     const existing = await prisma.discountCode.findFirst({
-      where: {
-        id: discountCodeId,
-        event: {
-          id,
-          organizerId: profile.id,
-        },
-      },
+      where: discountCodeWhere,
       select: { id: true },
     })
 

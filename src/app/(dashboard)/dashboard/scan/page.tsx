@@ -1,16 +1,16 @@
 import Link from 'next/link'
 import { prisma } from '@/lib/db'
-import { requireOrganizerProfile } from '@/lib/dashboard/organizer'
+import { requireOrganizerProfile, buildEventWhereClause } from '@/lib/dashboard/organizer'
 import { EventStatusBadge } from '@/components/dashboard/EventStatusBadge'
 import { formatDateTime } from '@/lib/utils'
 
 export default async function DashboardScanPage() {
-  const { organizerProfile } = await requireOrganizerProfile()
+  const { organizerProfile, isSuperAdmin } = await requireOrganizerProfile()
+
+  const where = buildEventWhereClause(organizerProfile, isSuperAdmin)
 
   const events = await prisma.event.findMany({
-    where: {
-      organizerId: organizerProfile.id,
-    },
+    where,
     select: {
       id: true,
       title: true,
@@ -37,7 +37,7 @@ export default async function DashboardScanPage() {
 
       {events.length === 0 ? (
         <div className="rounded-xl border border-dashed border-gray-300 bg-white p-8 text-center text-gray-600">
-          You do not have any events yet.
+          {isSuperAdmin ? 'No events on the platform yet.' : 'You do not have any events yet.'}
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">

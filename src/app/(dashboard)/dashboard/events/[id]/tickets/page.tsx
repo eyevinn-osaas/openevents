@@ -2,7 +2,7 @@ import { revalidatePath } from 'next/cache'
 import { notFound } from 'next/navigation'
 import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
-import { requireOrganizerProfile } from '@/lib/dashboard/organizer'
+import { requireOrganizerProfile, buildEventWhereClause, canAccessEvent } from '@/lib/dashboard/organizer'
 import { TicketTypeList } from '@/components/dashboard/TicketTypeList'
 import { TicketTypeForm } from '@/components/dashboard/TicketTypeForm'
 import { DEFAULT_CURRENCY, isSupportedCurrency } from '@/lib/constants/currencies'
@@ -18,16 +18,15 @@ function readParam(value: string | string[] | undefined): string | undefined {
 }
 
 export default async function TicketTypesPage({ params, searchParams }: PageProps) {
-  const { organizerProfile } = await requireOrganizerProfile()
+  const { organizerProfile, isSuperAdmin } = await requireOrganizerProfile()
   const { id } = await params
   const qs = await searchParams
   const editId = readParam(qs.edit)
 
+  const where = buildEventWhereClause(organizerProfile, isSuperAdmin, { id })
+
   const event = await prisma.event.findFirst({
-    where: {
-      id,
-      organizerId: organizerProfile.id,
-    },
+    where,
     select: {
       id: true,
       title: true,
@@ -57,12 +56,7 @@ export default async function TicketTypesPage({ params, searchParams }: PageProp
   async function createTicketType(formData: FormData) {
     'use server'
 
-    const { organizerProfile: profile } = await requireOrganizerProfile()
-
-    const eventCheck = await prisma.event.findFirst({
-      where: { id, organizerId: profile.id },
-      select: { id: true },
-    })
+    const { event: eventCheck } = await canAccessEvent(id)
 
     if (!eventCheck) {
       throw new Error('Event not found')
@@ -103,19 +97,23 @@ export default async function TicketTypesPage({ params, searchParams }: PageProp
   async function updateTicketType(formData: FormData) {
     'use server'
 
-    const { organizerProfile: profile } = await requireOrganizerProfile()
+    const { event: eventCheck, isSuperAdmin, organizerProfile } = await canAccessEvent(id)
+    if (!eventCheck) {
+      throw new Error('Event not found')
+    }
 
     const ticketTypeId = String(formData.get('ticketTypeId') || '')
     if (!ticketTypeId) return
 
+    const ticketTypeWhere: Prisma.TicketTypeWhereInput = {
+      id: ticketTypeId,
+      event: isSuperAdmin
+        ? { id, deletedAt: null }
+        : { id, organizerId: organizerProfile!.id, deletedAt: null },
+    }
+
     const ticketType = await prisma.ticketType.findFirst({
-      where: {
-        id: ticketTypeId,
-        event: {
-          id,
-          organizerId: profile.id,
-        },
-      },
+      where: ticketTypeWhere,
       select: { id: true },
     })
 
@@ -158,17 +156,20 @@ export default async function TicketTypesPage({ params, searchParams }: PageProp
   async function deleteTicketType(formData: FormData) {
     'use server'
 
-    const { organizerProfile: profile } = await requireOrganizerProfile()
+    const { event: eventCheck, isSuperAdmin, organizerProfile } = await canAccessEvent(id)
+    if (!eventCheck) return
+
     const ticketTypeId = String(formData.get('ticketTypeId') || '')
 
+    const ticketTypeWhere: Prisma.TicketTypeWhereInput = {
+      id: ticketTypeId,
+      event: isSuperAdmin
+        ? { id, deletedAt: null }
+        : { id, organizerId: organizerProfile!.id, deletedAt: null },
+    }
+
     const ticketType = await prisma.ticketType.findFirst({
-      where: {
-        id: ticketTypeId,
-        event: {
-          id,
-          organizerId: profile.id,
-        },
-      },
+      where: ticketTypeWhere,
       select: {
         id: true,
         soldCount: true,

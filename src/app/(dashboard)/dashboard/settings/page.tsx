@@ -1,4 +1,5 @@
 import { revalidatePath } from 'next/cache'
+import { redirect } from 'next/navigation'
 import { prisma } from '@/lib/db'
 import { requireOrganizerProfile } from '@/lib/dashboard/organizer'
 import { OrganizerProfileForm } from '@/components/dashboard/OrganizerProfileForm'
@@ -6,10 +7,19 @@ import { OrganizerProfileForm } from '@/components/dashboard/OrganizerProfileFor
 export default async function OrganizerSettingsPage() {
   const { organizerProfile } = await requireOrganizerProfile()
 
+  // Super admins without an organizer profile should use the admin panel
+  if (!organizerProfile) {
+    redirect('/admin')
+  }
+
   async function updateOrganizerProfile(formData: FormData) {
     'use server'
 
     const { organizerProfile: profile } = await requireOrganizerProfile()
+
+    if (!profile) {
+      throw new Error('Organizer profile not found')
+    }
 
     const orgName = String(formData.get('orgName') || '').trim()
     const description = String(formData.get('description') || '').trim() || null

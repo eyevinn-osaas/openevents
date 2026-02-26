@@ -1,4 +1,6 @@
 import Link from 'next/link'
+import { redirect } from 'next/navigation'
+import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { requireOrganizerProfile } from '@/lib/dashboard/organizer'
 import { EventStatusBadge } from '@/components/dashboard/EventStatusBadge'
@@ -10,38 +12,45 @@ function locationLabel(event: { venue: string | null; city: string | null; count
 }
 
 export default async function OrganizerProfilePage() {
-  const { user, organizerProfile } = await requireOrganizerProfile()
+  const { user, organizerProfile, isSuperAdmin } = await requireOrganizerProfile()
+
+  // Super admins without organizer profiles should use the admin panel
+  if (!organizerProfile) {
+    redirect('/admin')
+  }
+
   const now = new Date()
+
+  // For super admins, show platform-wide stats; for organizers, show their own
+  const eventWhere: Prisma.EventWhereInput = isSuperAdmin
+    ? { deletedAt: null }
+    : { organizerId: organizerProfile.id, deletedAt: null }
 
   const [totalEvents, publishedEvents, draftEvents, upcomingEvents, recentEvents] = await prisma.$transaction([
     prisma.event.count({
-      where: {
-        organizerId: organizerProfile.id,
-      },
+      where: eventWhere,
     }),
     prisma.event.count({
       where: {
-        organizerId: organizerProfile.id,
+        ...eventWhere,
         status: 'PUBLISHED',
       },
     }),
     prisma.event.count({
       where: {
-        organizerId: organizerProfile.id,
+        ...eventWhere,
         status: 'DRAFT',
       },
     }),
     prisma.event.count({
       where: {
-        organizerId: organizerProfile.id,
+        ...eventWhere,
         status: 'PUBLISHED',
         startDate: { gte: now },
       },
     }),
     prisma.event.findMany({
-      where: {
-        organizerId: organizerProfile.id,
-      },
+      where: eventWhere,
       select: {
         id: true,
         title: true,
