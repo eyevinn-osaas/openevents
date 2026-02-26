@@ -476,19 +476,19 @@ export function CheckoutForm({ event }: CheckoutFormProps) {
 
         // Payment completed (stub mode or already captured)
         if (payData.checkout?.type === 'completed') {
-          router.push(`/orders/${payData.order.orderNumber}/confirmation`)
+          router.push(`/orders/${payData.order.orderNumber}`)
           return
         }
 
         // Invoice flow
         if (payData.checkout?.type === 'invoice') {
-          router.push(`/orders/${payData.order.orderNumber}/confirmation`)
+          router.push(`/orders/${payData.order.orderNumber}`)
           return
         }
       }
 
       // Free order or invoice - go directly to confirmation
-      router.push(`/orders/${orderNumber}/confirmation`)
+      router.push(`/orders/${orderNumber}`)
     } catch (error) {
       console.error('Failed to complete checkout', error)
       setSubmitError('Checkout failed. Please try again.')

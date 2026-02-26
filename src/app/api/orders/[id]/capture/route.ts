@@ -94,7 +94,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
 
     // Check if already paid
     if (order.status === 'PAID') {
-      return NextResponse.redirect(`${APP_URL}/orders/${order.orderNumber}/confirmation`)
+      return NextResponse.redirect(`${APP_URL}/orders/${order.orderNumber}`)
     }
 
     if (order.status === 'PENDING' && order.expiresAt && order.expiresAt <= new Date()) {
@@ -277,7 +277,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
     revalidateTag('dashboard-analytics', 'max')
 
     // Redirect to confirmation page
-    return NextResponse.redirect(`${APP_URL}/orders/${paidOrder.orderNumber}/confirmation`)
+    return NextResponse.redirect(`${APP_URL}/orders/${paidOrder.orderNumber}`)
   } catch (error) {
     if (error instanceof Error && error.message === 'Unauthorized') {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })

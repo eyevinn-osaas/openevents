@@ -66,7 +66,7 @@ export async function GET(_request: NextRequest, context: RouteContext) {
 
     // If already paid or cancelled, redirect appropriately
     if (order.status === 'PAID') {
-      return NextResponse.redirect(`${APP_URL}/orders/${order.orderNumber}/confirmation`)
+      return NextResponse.redirect(`${APP_URL}/orders/${order.orderNumber}`)
     }
 
     if (order.status === 'CANCELLED') {

@@ -75,7 +75,7 @@ export function OrderList({ orders }: OrderListProps) {
       {error && <p className="text-sm text-red-600">{error}</p>}
 
       {orders.map((order) => {
-        const confirmationHref = `/orders/${order.orderNumber}/confirmation`
+        const confirmationHref = `/orders/${order.orderNumber}`
 
         return (
           <div
