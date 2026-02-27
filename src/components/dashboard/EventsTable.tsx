@@ -50,6 +50,29 @@ export function EventsTable({ events }: EventsTableProps) {
     }
   }
 
+  async function deleteEvent(eventId: string, eventTitle: string) {
+    const confirmed = window.confirm(`Are you sure you want to permanently delete "${eventTitle}"? This action cannot be undone.`)
+    if (!confirmed) return
+
+    setBusyId(eventId)
+    setError(null)
+
+    try {
+      const response = await fetch(`/api/events/${eventId}`, {
+        method: 'DELETE',
+      })
+      const json = await response.json()
+      if (!response.ok) {
+        throw new Error(json?.error || 'Failed to delete event')
+      }
+      window.location.reload()
+    } catch (deleteError) {
+      setError(deleteError instanceof Error ? deleteError.message : 'Delete failed')
+    } finally {
+      setBusyId(null)
+    }
+  }
+
   if (events.length === 0) {
     return (
       <div className="rounded-xl border border-dashed border-gray-300 bg-white p-10 text-center text-gray-600">
@@ -103,6 +126,11 @@ export function EventsTable({ events }: EventsTableProps) {
                     {event.status === 'PUBLISHED' ? (
                       <Button variant="destructive" size="sm" isLoading={busyId === event.id} onClick={() => runAction(event.id, 'cancel')}>
                         Cancel
+                      </Button>
+                    ) : null}
+                    {event.status === 'CANCELLED' || event.status === 'DRAFT' ? (
+                      <Button variant="destructive" size="sm" isLoading={busyId === event.id} onClick={() => deleteEvent(event.id, event.title)}>
+                        Delete
                       </Button>
                     ) : null}
                   </div>

@@ -252,8 +252,7 @@ export function CheckoutForm({ event }: CheckoutFormProps) {
         ],
       }
     })
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [buyer.firstName, buyer.lastName, buyer.email, buyer.title, buyer.organization])
+  }, [selectedItems, buyer.firstName, buyer.lastName, buyer.email, buyer.title, buyer.organization])
 
   useEffect(() => {
     if (discount?.discountType === 'INVOICE') {
@@ -271,6 +270,39 @@ export function CheckoutForm({ event }: CheckoutFormProps) {
         : { ...current, email: accountEmail }
     ))
   }, [session?.user?.email])
+
+  // Fetch user profile to get firstName/lastName (not available in session)
+  useEffect(() => {
+    if (!isAuthenticated) return
+
+    async function fetchUserProfile() {
+      try {
+        const response = await fetch('/api/users/me')
+        if (!response.ok) return
+
+        const data = await response.json()
+        const { firstName, lastName } = data.data || {}
+
+        setBuyer((current) => {
+          // Only update if fields are still empty (user hasn't typed anything)
+          const shouldUpdateFirst = !current.firstName && firstName
+          const shouldUpdateLast = !current.lastName && lastName
+
+          if (!shouldUpdateFirst && !shouldUpdateLast) return current
+
+          return {
+            ...current,
+            firstName: shouldUpdateFirst ? firstName : current.firstName,
+            lastName: shouldUpdateLast ? lastName : current.lastName,
+          }
+        })
+      } catch (error) {
+        console.error('Failed to fetch user profile:', error)
+      }
+    }
+
+    fetchUserProfile()
+  }, [isAuthenticated])
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -789,6 +821,7 @@ export function CheckoutForm({ event }: CheckoutFormProps) {
             <DiscountCodeInput
               eventId={event.id}
               selectedTicketTypeIds={selectedTicketTypeIds}
+              ticketQuantities={quantities}
               onDiscountChange={setDiscount}
             />
           </CardContent>
