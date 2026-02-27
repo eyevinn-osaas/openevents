@@ -36,8 +36,9 @@ export function OrganizerSidebarNav() {
 
   const profileSectionActive = pathname === '/dashboard/profile' || pathname.startsWith('/dashboard/settings')
   const [profileMenuExpanded, setProfileMenuExpanded] = useState(false)
-  const [collapsedActivePath, setCollapsedActivePath] = useState<string | null>(null)
-  const profileOpen = profileSectionActive ? collapsedActivePath !== pathname : profileMenuExpanded
+  const [profileMenuOverride, setProfileMenuOverride] = useState<{ path: string; open: boolean } | null>(null)
+  const autoProfileOpen = profileMenuExpanded || profileSectionActive
+  const profileOpen = profileMenuOverride?.path === pathname ? profileMenuOverride.open : autoProfileOpen
 
   return (
     <nav className="mt-3 space-y-1 text-sm">
@@ -77,11 +78,9 @@ export function OrganizerSidebarNav() {
             aria-label={profileOpen ? 'Collapse profile links' : 'Expand profile links'}
             aria-expanded={profileOpen}
             onClick={() => {
-              if (profileSectionActive) {
-                setCollapsedActivePath((current) => (current === pathname ? null : pathname))
-                return
-              }
-              setProfileMenuExpanded((open) => !open)
+              const nextOpen = !profileOpen
+              setProfileMenuExpanded(nextOpen)
+              setProfileMenuOverride({ path: pathname, open: nextOpen })
             }}
           >
             <ChevronDown className={cn('h-4 w-4 transition', profileOpen ? 'rotate-180' : '')} />

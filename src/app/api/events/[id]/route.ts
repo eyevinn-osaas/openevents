@@ -9,12 +9,32 @@ type RouteContext = {
   params: Promise<{ id: string }>
 }
 
+type ActionHint = {
+  label: string
+  href: string
+}
+
 const updateEventApiSchema = updateEventSchema.extend({
   status: z.enum(['DRAFT', 'PUBLISHED']).optional(),
 })
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null
+}
+
+function errorResponse(
+  message: string,
+  status: number,
+  extra?: Record<string, unknown>
+) {
+  return NextResponse.json(
+    {
+      message,
+      error: message,
+      ...(extra ?? {}),
+    },
+    { status }
+  )
 }
 
 export async function PATCH(request: NextRequest, context: RouteContext) {
@@ -272,26 +292,26 @@ export async function DELETE(_request: NextRequest, context: RouteContext) {
       },
     })
 
-    if (!existingEvent || existingEvent.deletedAt) {
-      return NextResponse.json({ error: 'Event not found' }, { status: 404 })
-    }
+    if (!existingEvent || existingEvent.deletedAt) return errorResponse('Event not found.', 404)
 
     if (existingEvent.organizer.userId !== user.id) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+      return errorResponse('You do not have permission to delete this event.', 403)
     }
 
     if (existingEvent.status === 'PUBLISHED') {
-      return NextResponse.json(
-        { error: 'Published events cannot be deleted. Cancel the event first.' },
-        { status: 400 }
+      const action: ActionHint = {
+        label: 'Open event dashboard',
+        href: `/dashboard/events/${id}`,
+      }
+      return errorResponse(
+        'Published events cannot be deleted. Cancel the event first.',
+        400,
+        { action }
       )
     }
 
     if (existingEvent.status === 'COMPLETED') {
-      return NextResponse.json(
-        { error: 'Completed events cannot be deleted' },
-        { status: 400 }
-      )
+      return errorResponse('Completed events cannot be deleted.', 400)
     }
 
     // For cancelled events, check for pending refunds
@@ -304,9 +324,14 @@ export async function DELETE(_request: NextRequest, context: RouteContext) {
       })
 
       if (pendingRefunds > 0) {
-        return NextResponse.json(
-          { error: `Cannot delete event with ${pendingRefunds} pending refund(s). Process refunds first.` },
-          { status: 400 }
+        const action: ActionHint = {
+          label: 'Review event orders',
+          href: `/dashboard/events/${id}/orders`,
+        }
+        return errorResponse(
+          `Cannot delete event with ${pendingRefunds} pending refund(s). Process refunds first.`,
+          400,
+          { action }
         )
       }
     }
@@ -321,18 +346,18 @@ export async function DELETE(_request: NextRequest, context: RouteContext) {
   } catch (error) {
     if (error instanceof Error) {
       if (error.message === 'Unauthorized') {
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+        return errorResponse('Unauthorized.', 401)
       }
 
       if (error.message.includes('Forbidden')) {
-        return NextResponse.json({ error: error.message }, { status: 403 })
+        return errorResponse(error.message, 403)
       }
     }
 
     console.error('Delete event failed:', error)
-    return NextResponse.json(
-      { error: 'Failed to delete event' },
-      { status: 500 }
+    return errorResponse(
+      'Could not delete the event due to a system error. Please try again.',
+      500
     )
   }
 }
