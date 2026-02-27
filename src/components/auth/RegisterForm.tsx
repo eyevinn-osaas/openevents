@@ -68,17 +68,12 @@ export function RegisterForm() {
   const {
     register,
     handleSubmit,
-    setValue,
     watch,
     formState: { errors },
   } = useForm<RegisterInput>({
     resolver: zodResolver(registerSchema),
-    defaultValues: {
-      role: 'ATTENDEE',
-    },
   })
 
-  const role = watch('role', 'ATTENDEE')
   const password = watch('password', '')
 
   const onSubmit = async (data: RegisterInput) => {
@@ -156,44 +151,11 @@ export function RegisterForm() {
   }
 
   return (
-    <div className="space-y-0">
-      <div className="relative z-10 -mb-px grid grid-cols-2 gap-1 px-2">
-        <button
-          type="button"
-          onClick={() => setValue('role', 'ATTENDEE', { shouldValidate: true })}
-          className="relative h-[112px] w-full text-left"
-        >
-          <div
-            className={`absolute inset-x-0 bottom-0 rounded-t-[1.75rem] border px-6 text-left transition-all duration-200 ${
-              role === 'ATTENDEE'
-                ? 'top-0 z-20 border-gray-300 border-b-white bg-white py-6 text-gray-900 shadow-[0_14px_30px_-16px_rgba(17,24,39,0.35)]'
-                : 'top-3 z-10 border-gray-300 bg-gray-100 py-4 text-gray-500 hover:bg-gray-200'
-            }`}
-          >
-            <p className="text-3xl font-semibold leading-tight tracking-tight">Attendee</p>
-          </div>
-        </button>
-        <button
-          type="button"
-          onClick={() => setValue('role', 'ORGANIZER', { shouldValidate: true })}
-          className="relative h-[112px] w-full text-left"
-        >
-          <div
-            className={`absolute inset-x-0 bottom-0 rounded-t-[1.75rem] border px-6 text-left transition-all duration-200 ${
-              role === 'ORGANIZER'
-                ? 'top-0 z-20 border-gray-300 border-b-white bg-white py-6 text-gray-900 shadow-[0_14px_30px_-16px_rgba(17,24,39,0.35)]'
-                : 'top-3 z-10 border-gray-300 bg-gray-100 py-4 text-gray-500 hover:bg-gray-200'
-            }`}
-          >
-            <p className="text-3xl font-semibold leading-tight tracking-tight">Organizer</p>
-          </div>
-        </button>
-      </div>
-      <Card className="relative z-20 rounded-t-none rounded-b-[1.75rem] border border-t-0 border-gray-300 shadow-xl">
+    <Card className="rounded-[1.75rem] border border-gray-300 shadow-xl">
       <CardHeader className="space-y-2 pt-9">
         <CardTitle className="text-3xl text-center font-semibold tracking-tight">Create your account</CardTitle>
         <CardDescription className="text-center text-base">
-          {role === 'ORGANIZER' ? 'Set up your organizer account to publish events.' : 'Create an attendee account to discover and join events.'}
+          Create an account to discover and join events.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -205,8 +167,6 @@ export function RegisterForm() {
         )}
 
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-          <input type="hidden" {...register('role')} />
-
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="firstName" required>First Name</Label>
@@ -335,7 +295,6 @@ export function RegisterForm() {
           </Link>
         </div>
       </CardFooter>
-      </Card>
-    </div>
+    </Card>
   )
 }

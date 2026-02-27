@@ -3,7 +3,7 @@ import { revalidateTag } from 'next/cache'
 import { Prisma } from '@prisma/client'
 import { requireAuth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
-import { sendOrderConfirmationEmail } from '@/lib/email'
+import { sendOrderConfirmationEmail, sendInvoiceOrderNotificationEmail } from '@/lib/email'
 import { lockTicketTypes, prepareOrderItems, generateTicketCreateInput } from '@/lib/orders'
 import { claimDiscountCodeUsage, getDiscountUsageUnitsFromItems } from '@/lib/orders/discountUsage'
 import {
@@ -232,6 +232,21 @@ export async function POST(request: NextRequest) {
             return sum
           }, 0)
 
+          if (discountCodeRecord.minCartAmount !== null) {
+            const minQuantity = decimalToNumber(discountCodeRecord.minCartAmount)
+            const totalApplicableQuantity = preparedOrder.items.reduce((sum, item) => {
+              if (appliesToAll || applicableTicketTypeIds.includes(item.ticketTypeId)) {
+                return sum + item.quantity
+              }
+              return sum
+            }, 0)
+            if (totalApplicableQuantity < minQuantity) {
+              throw new Error(
+                `At least ${minQuantity} ticket(s) of the applicable type are required for this discount code`
+              )
+            }
+          }
+
           discountAmount = calculateDiscountAmount(
             discountableSubtotal,
             discountCodeRecord.discountType,
@@ -369,6 +384,7 @@ export async function POST(request: NextRequest) {
             tickets: true,
             event: {
               select: {
+                id: true,
                 title: true,
                 startDate: true,
                 locationType: true,
@@ -376,6 +392,15 @@ export async function POST(request: NextRequest) {
                 city: true,
                 country: true,
                 onlineUrl: true,
+                organizer: {
+                  select: {
+                    user: {
+                      select: {
+                        email: true,
+                      },
+                    },
+                  },
+                },
               },
             },
           },
@@ -408,6 +433,27 @@ export async function POST(request: NextRequest) {
         totalAmount: `${createdOrder.totalAmount.toString()} ${createdOrder.currency}`,
         buyerName: `${createdOrder.buyerFirstName} ${createdOrder.buyerLastName}`,
       })
+    }
+
+    // Notify organizer of new invoice order
+    if (createdOrder.status === 'PENDING_INVOICE') {
+      const organizerEmail = createdOrder.event.organizer?.user?.email
+      if (organizerEmail) {
+        await sendInvoiceOrderNotificationEmail(organizerEmail, {
+          orderNumber: createdOrder.orderNumber,
+          eventTitle: createdOrder.event.title,
+          eventId: createdOrder.event.id,
+          buyerName: `${createdOrder.buyerFirstName} ${createdOrder.buyerLastName}`,
+          buyerEmail: createdOrder.buyerEmail,
+          totalAmount: createdOrder.totalAmount.toString(),
+          currency: createdOrder.currency,
+          tickets: createdOrder.items.map((item) => ({
+            name: item.ticketType.name,
+            quantity: item.quantity,
+            price: `${item.totalPrice.toString()} ${createdOrder.currency}`,
+          })),
+        })
+      }
     }
 
     return NextResponse.json({
@@ -451,7 +497,8 @@ export async function POST(request: NextRequest) {
       if (
         handledErrors.has(error.message) ||
         error.message.includes('remaining capacity') ||
-        error.message.includes('use(s) remaining')
+        error.message.includes('use(s) remaining') || 
+        error.message.includes('ticket(s) of the applicable type')
       ) {
         return NextResponse.json({ error: error.message }, { status: 400 })
       }
