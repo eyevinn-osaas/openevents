@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { formatDateTime } from '@/lib/utils'
 import { DownloadTicketsButton } from '@/components/tickets/DownloadTicketsButton'
 import { TicketQRCode } from '@/components/tickets/TicketQRCode'
+import { AddToCalendar } from '@/components/events/AddToCalendar'
 
 interface TicketDisplayProps {
   order: {
@@ -111,15 +112,15 @@ export function TicketDisplay({ order }: TicketDisplayProps) {
               <ExternalLink className="mr-1.5 h-4 w-4" aria-hidden="true" />
               View Event
             </Link>
-            <a
-              href={calendarUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex h-9 items-center justify-center rounded-md border border-gray-300 bg-white px-3 text-sm font-medium text-gray-700 transition hover:bg-gray-50"
-            >
-              <CalendarPlus className="mr-1.5 h-4 w-4" aria-hidden="true" />
-              Add to Calendar
-            </a>
+            <AddToCalendar
+              eventSlug={order.event.slug}
+              event={{
+                title: order.event.title,
+                location: eventLocation,
+                startDate: order.event.startDate,
+                endDate: order.event.endDate,
+              }}
+            />
             <DownloadTicketsButton />
           </div>
         </CardContent>
