@@ -94,23 +94,44 @@ export default async function EventDetailsPage({ params, searchParams }: PagePro
   const displayTimeZone = isValidTimeZone(event.timezone) ? event.timezone : 'UTC'
   const startDateLabel = new Intl.DateTimeFormat('en', {
     month: 'long',
+    year: 'numeric',
     timeZone: displayTimeZone,
     day: 'numeric',
   }).format(event.startDate)
+  const endDateLabel = new Intl.DateTimeFormat('en', {
+    month: 'long',
+    year: 'numeric',
+    timeZone: displayTimeZone,
+    day: 'numeric',
+  }).format(event.endDate)
   const startTimeLabel = new Intl.DateTimeFormat('en', {
     hour: 'numeric',
     minute: '2-digit',
     timeZone: displayTimeZone,
-    timeZoneName: 'short',
   }).format(event.startDate)
-  const startDateShortLabel = new Intl.DateTimeFormat('en', {
-    month: 'long',
-    day: 'numeric',
+  const endTimeLabel = new Intl.DateTimeFormat('en', {
+    hour: 'numeric',
+    minute: '2-digit',
+    timeZone: displayTimeZone,
+  }).format(event.endDate)
+  const startDateKey = new Intl.DateTimeFormat('en-CA', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
     timeZone: displayTimeZone,
   }).format(event.startDate)
-  const rightDateLabel = startDateShortLabel
-  const rightTimeLabel = startTimeLabel
-  const startDateTimeLabel = `${startDateLabel} at ${startTimeLabel}`
+  const endDateKey = new Intl.DateTimeFormat('en-CA', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    timeZone: displayTimeZone,
+  }).format(event.endDate)
+  const isSameLocalDay = startDateKey === endDateKey
+  const rightDateLabel = isSameLocalDay ? startDateLabel : `${startDateLabel} - ${endDateLabel}`
+  const rightTimeLabel = `${startTimeLabel} - ${endTimeLabel}`
+  const startDateTimeLabel = isSameLocalDay
+    ? `${startDateLabel} at ${rightTimeLabel}`
+    : `${startDateLabel} at ${startTimeLabel} - ${endDateLabel} at ${endTimeLabel}`
   const notice = firstQueryValue(query.notice)
   const noticeMessage = notice === 'created'
     ? 'Event created'
