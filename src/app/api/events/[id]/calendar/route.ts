@@ -11,6 +11,21 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 
+function getRequestBaseUrl(request: NextRequest): string {
+  const forwardedHost = request.headers.get('x-forwarded-host')?.split(',')[0]?.trim()
+  const forwardedProto = request.headers.get('x-forwarded-proto')?.split(',')[0]?.trim()
+  const host = forwardedHost || request.headers.get('host') || ''
+
+  if (!host) {
+    return process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
+  }
+
+  const proto =
+    forwardedProto ||
+    (host.startsWith('localhost') || host.startsWith('127.0.0.1') ? 'http' : 'https')
+  return `${proto}://${host}`
+}
+
 /**
  * Format a date to iCal format (YYYYMMDDTHHMMSSZ)
  */
@@ -176,7 +191,7 @@ export async function GET(
     }
 
     // Add URL to the event page
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
+    const appUrl = getRequestBaseUrl(request)
     icalLines.push(`URL:${appUrl}/events/${event.slug}`)
 
     icalLines.push('END:VEVENT', 'END:VCALENDAR')

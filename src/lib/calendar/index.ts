@@ -133,8 +133,12 @@ export function generateYahooCalendarUrl(event: CalendarEvent): string {
  * @param baseUrl - The base URL of the application
  */
 export function generateICalUrl(eventSlug: string, baseUrl?: string): string {
-  const appUrl = baseUrl || process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
-  return `${appUrl}/api/events/${eventSlug}/calendar`
+  if (!baseUrl) {
+    return `/api/events/${eventSlug}/calendar`
+  }
+
+  const normalizedBaseUrl = baseUrl.replace(/\/+$/, '')
+  return `${normalizedBaseUrl}/api/events/${eventSlug}/calendar`
 }
 
 /**

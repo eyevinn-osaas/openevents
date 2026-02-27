@@ -19,13 +19,13 @@ export function Footer() {
             <h3 className="text-sm font-semibold text-gray-900">Features</h3>
             <ul className="mt-4 space-y-2 text-sm">
               <li>
-                <a href="#" className="hover:text-gray-900">Core features</a>
+                <Link href="/info/core-features" className="hover:text-gray-900">Core features</Link>
               </li>
               <li>
-                <a href="#" className="hover:text-gray-900">Pro experience</a>
+                <Link href="/info/pro-experience" className="hover:text-gray-900">Pro experience</Link>
               </li>
               <li>
-                <a href="#" className="hover:text-gray-900">Integrations</a>
+                <Link href="/info/integrations" className="hover:text-gray-900">Integrations</Link>
               </li>
             </ul>
           </div>
@@ -34,10 +34,10 @@ export function Footer() {
             <h3 className="text-sm font-semibold text-gray-900">Learn more</h3>
             <ul className="mt-4 space-y-2 text-sm">
               <li>
-                <a href="#" className="hover:text-gray-900">Customer stories</a>
+                <Link href="/info/customer-stories" className="hover:text-gray-900">Customer stories</Link>
               </li>
               <li>
-                <a href="#" className="hover:text-gray-900">Best practices</a>
+                <Link href="/info/best-practices" className="hover:text-gray-900">Best practices</Link>
               </li>
             </ul>
           </div>
@@ -49,14 +49,23 @@ export function Footer() {
             </h3>
             <ul className="mt-4 space-y-2 text-sm">
               <li>
-                <a href="#" className="hover:text-gray-900">
-                  Contact Us
-                </a>
+                <Link href="/about" className="hover:text-gray-900">
+                  About Us
+                </Link>
               </li>
               <li>
-                <a href="#" className="hover:text-gray-900">
-                  Support
-                </a>
+                <Link href="/contact" className="hover:text-gray-900">
+                  Contact Us
+                </Link>
+              </li>
+              <li>
+                <Link href="/support" className="hover:text-gray-900">Help Center</Link>
+              </li>
+              <li>
+                <Link href="/privacy" className="hover:text-gray-900">Privacy Policy</Link>
+              </li>
+              <li>
+                <Link href="/terms" className="hover:text-gray-900">Terms of Service</Link>
               </li>
             </ul>
           </div>

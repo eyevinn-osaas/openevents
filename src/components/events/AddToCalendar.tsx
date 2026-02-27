@@ -6,65 +6,44 @@
  * Provides a dropdown menu with options to add an event to various calendar services:
  * - Google Calendar
  * - Apple Calendar (iCal download)
- * - Outlook.com
- * - Office 365
- * - Yahoo Calendar
  */
 import { useState } from 'react'
 import { Calendar, ChevronDown, Download } from 'lucide-react'
 import {
   generateGoogleCalendarUrl,
-  generateOutlookUrl,
-  generateOffice365Url,
-  generateYahooCalendarUrl,
   generateICalUrl,
   type CalendarEvent,
 } from '@/lib/calendar'
 
+type CalendarEventInput = Omit<CalendarEvent, 'startDate' | 'endDate'> & {
+  startDate: Date | string
+  endDate: Date | string
+}
+
 interface AddToCalendarProps {
-  event: CalendarEvent
+  event: CalendarEventInput
   eventSlug: string
   className?: string
 }
 
 export function AddToCalendar({ event, eventSlug, className = '' }: AddToCalendarProps) {
   const [isOpen, setIsOpen] = useState(false)
+  const normalizedEvent: CalendarEvent = {
+    ...event,
+    startDate: event.startDate instanceof Date ? event.startDate : new Date(event.startDate),
+    endDate: event.endDate instanceof Date ? event.endDate : new Date(event.endDate),
+  }
 
   const calendarOptions = [
     {
       name: 'Google Calendar',
       icon: '📅',
-      url: generateGoogleCalendarUrl(event),
+      url: generateGoogleCalendarUrl(normalizedEvent),
       external: true,
     },
     {
-      name: 'Apple Calendar',
+      name: 'Apple Calendar (.ics)',
       icon: '🍎',
-      url: generateICalUrl(eventSlug),
-      external: false,
-      download: true,
-    },
-    {
-      name: 'Outlook.com',
-      icon: '📧',
-      url: generateOutlookUrl(event),
-      external: true,
-    },
-    {
-      name: 'Office 365',
-      icon: '💼',
-      url: generateOffice365Url(event),
-      external: true,
-    },
-    {
-      name: 'Yahoo Calendar',
-      icon: '📆',
-      url: generateYahooCalendarUrl(event),
-      external: true,
-    },
-    {
-      name: 'Download .ics',
-      icon: '⬇️',
       url: generateICalUrl(eventSlug),
       external: false,
       download: true,
