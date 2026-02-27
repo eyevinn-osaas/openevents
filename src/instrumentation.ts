@@ -19,11 +19,29 @@ async function loadConfigFromOSC() {
     process.env.CONFIG_SERVICE ||
     process.env.ConfigService
 
-  // Backward-compatible fallback for older deployments.
+  // Derive tenant prefix from APP_URL when available, e.g.
+  // https://ebba-openevents.eyevinn-web-runner... -> "ebba"
+  const tenantPrefix = (() => {
+    const appUrl = process.env.APP_URL
+    if (!appUrl) return null
+    try {
+      const hostname = new URL(appUrl).hostname
+      const firstLabel = hostname.split('.')[0] || ''
+      const dashIndex = firstLabel.indexOf('-')
+      if (dashIndex <= 0) return null
+      return firstLabel.slice(0, dashIndex)
+    } catch {
+      return null
+    }
+  })()
+
+  // Backward-compatible fallback when explicit URL is not provided.
   const configServiceName = process.env.CONFIG_SERVICE_NAME || 'openeventsconfig'
   const configServiceUrl = explicitConfigServiceUrl
     ? explicitConfigServiceUrl.replace(/\/$/, '')
-    : `https://team2-${configServiceName}.eyevinn-app-config-svc.auto.prod.osaas.io`
+    : tenantPrefix
+      ? `https://${tenantPrefix}-${configServiceName}.eyevinn-app-config-svc.auto.prod.osaas.io`
+      : `https://team2-${configServiceName}.eyevinn-app-config-svc.auto.prod.osaas.io`
 
   console.log(`[instrumentation] Fetching config from ${configServiceUrl}`)
 
