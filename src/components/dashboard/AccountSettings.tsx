@@ -1,4 +1,8 @@
+'use client'
+
+import { useState, useTransition } from 'react'
 import { Button } from '@/components/ui/button'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 
@@ -52,6 +56,16 @@ export function AccountSettings({
               ? 'Invalid or expired account deletion link.'
               : null
 
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
+  const [isDeleting, startDeleteTransition] = useTransition()
+
+  function handleConfirmDelete() {
+    startDeleteTransition(async () => {
+      await deleteAccountAction(new FormData())
+      setDeleteConfirmOpen(false)
+    })
+  }
+
   return (
     <div className="space-y-6">
       {noticeMessage ? (
@@ -102,13 +116,14 @@ export function AccountSettings({
             {hasPendingConfirmation ? (
               <p className="text-sm text-red-800">Check your inbox to confirm deletion. You can request another confirmation email if the previous link expired.</p>
             ) : null}
-            <form action={deleteAccountAction}>
-              <Button type="submit" variant="destructive">
-                {hasPendingConfirmation
-                  ? 'Resend Confirmation Email'
-                  : 'Delete Account'}
-              </Button>
-            </form>
+            <Button
+              type="button"
+              variant="destructive"
+              isLoading={isDeleting}
+              onClick={() => setDeleteConfirmOpen(true)}
+            >
+              {hasPendingConfirmation ? 'Resend Confirmation Email' : 'Delete Account'}
+            </Button>
           </>
         )}
       </section>
@@ -125,6 +140,20 @@ export function AccountSettings({
           </ul>
         )}
       </section>
+
+      <ConfirmDialog
+        open={deleteConfirmOpen}
+        title={hasPendingConfirmation ? 'Resend deletion confirmation?' : 'Delete your account?'}
+        description={
+          hasPendingConfirmation
+            ? 'A new confirmation email will be sent to your inbox. Follow the link to confirm account deletion.'
+            : 'A confirmation email will be sent to your inbox. After you confirm, your account will enter a grace period before being permanently deleted. This cannot be undone.'
+        }
+        confirmLabel={hasPendingConfirmation ? 'Resend Email' : 'Send Confirmation Email'}
+        isLoading={isDeleting}
+        onConfirm={handleConfirmDelete}
+        onClose={() => setDeleteConfirmOpen(false)}
+      />
     </div>
   )
 }

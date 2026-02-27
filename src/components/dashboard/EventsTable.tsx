@@ -5,7 +5,9 @@ import { EventStatus } from '@prisma/client'
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { EventStatusBadge } from '@/components/dashboard/EventStatusBadge'
+import { useToast } from '@/components/ui/toaster'
 import { formatDateTime } from '@/lib/utils'
 
 type EventsTableProps = {
@@ -66,12 +68,13 @@ function parseUiActionError(payload: unknown, fallbackMessage: string): UiAction
 
 export function EventsTable({ events }: EventsTableProps) {
   const router = useRouter()
+  const showToast = useToast()
   const [busyId, setBusyId] = useState<string | null>(null)
-  const [error, setError] = useState<UiActionError | null>(null)
+  const [pendingDelete, setPendingDelete] = useState<{ id: string; title: string } | null>(null)
+  const [pendingCancel, setPendingCancel] = useState<{ id: string; title: string } | null>(null)
 
   async function runAction(eventId: string, action: 'publish' | 'cancel') {
     setBusyId(eventId)
-    setError(null)
     const actionLabel = action === 'publish' ? 'publish' : 'cancel'
 
     try {
@@ -83,31 +86,26 @@ export function EventsTable({ events }: EventsTableProps) {
       })
       const json = await response.json().catch(() => null)
       if (!response.ok) {
-        setError(
-          parseUiActionError(
-            json,
-            `Could not ${actionLabel} the event due to a system error. Please try again.`
-          )
+        const { message } = parseUiActionError(
+          json,
+          `Could not ${actionLabel} the event due to a system error. Please try again.`
         )
+        showToast(message, 'error')
         return
       }
       router.refresh()
+      showToast(action === 'publish' ? 'Event published successfully' : 'Event cancelled')
     } catch (actionError) {
       console.error(`Failed to ${action} event`, actionError)
-      setError({
-        message: `Could not ${actionLabel} the event due to a system error. Please try again.`,
-      })
+      showToast(`Could not ${actionLabel} the event due to a system error. Please try again.`, 'error')
     } finally {
       setBusyId(null)
+      setPendingCancel(null)
     }
   }
 
-  async function deleteEvent(eventId: string, eventTitle: string) {
-    const confirmed = window.confirm(`Are you sure you want to permanently delete "${eventTitle}"? This action cannot be undone.`)
-    if (!confirmed) return
-
+  async function deleteEvent(eventId: string) {
     setBusyId(eventId)
-    setError(null)
 
     try {
       const response = await fetch(`/api/events/${eventId}`, {
@@ -115,22 +113,21 @@ export function EventsTable({ events }: EventsTableProps) {
       })
       const json = await response.json().catch(() => null)
       if (!response.ok) {
-        setError(
-          parseUiActionError(
-            json,
-            'Could not delete the event due to a system error. Please try again.'
-          )
+        const { message } = parseUiActionError(
+          json,
+          'Could not delete the event due to a system error. Please try again.'
         )
+        showToast(message, 'error')
         return
       }
       router.refresh()
+      showToast('Event deleted')
     } catch (deleteError) {
       console.error('Failed to delete event', deleteError)
-      setError({
-        message: 'Could not delete the event due to a system error. Please try again.',
-      })
+      showToast('Could not delete the event due to a system error. Please try again.', 'error')
     } finally {
       setBusyId(null)
+      setPendingDelete(null)
     }
   }
 
@@ -144,19 +141,6 @@ export function EventsTable({ events }: EventsTableProps) {
 
   return (
     <div className="overflow-hidden rounded-xl border border-gray-200 bg-white">
-      {error ? (
-        <div className="border-b border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-          <p>{error.message}</p>
-          {error.action ? (
-            <Link
-              href={error.action.href}
-              className="mt-1 inline-block font-medium text-red-800 underline hover:text-red-900"
-            >
-              {`${error.action.label} ->`}
-            </Link>
-          ) : null}
-        </div>
-      ) : null}
       <div className="overflow-x-auto">
         <table className="min-w-full divide-y divide-gray-200 text-sm">
           <thead className="bg-gray-50">
@@ -201,12 +185,12 @@ export function EventsTable({ events }: EventsTableProps) {
                       </Button>
                     ) : null}
                     {event.status === 'PUBLISHED' ? (
-                      <Button variant="destructive" size="sm" isLoading={busyId === event.id} onClick={() => runAction(event.id, 'cancel')}>
+                      <Button variant="destructive" size="sm" isLoading={busyId === event.id} onClick={() => setPendingCancel({ id: event.id, title: event.title })}>
                         Cancel
                       </Button>
                     ) : null}
                     {event.status === 'CANCELLED' || event.status === 'DRAFT' ? (
-                      <Button variant="destructive" size="sm" isLoading={busyId === event.id} onClick={() => deleteEvent(event.id, event.title)}>
+                      <Button variant="destructive" size="sm" isLoading={busyId === event.id} onClick={() => setPendingDelete({ id: event.id, title: event.title })}>
                         Delete
                       </Button>
                     ) : null}
@@ -217,6 +201,28 @@ export function EventsTable({ events }: EventsTableProps) {
           </tbody>
         </table>
       </div>
+
+      <ConfirmDialog
+        open={pendingCancel !== null}
+        title={`Cancel "${pendingCancel?.title}"?`}
+        description="This will cancel the event and notify all ticket holders. This action cannot be undone."
+        confirmLabel="Cancel Event"
+        isLoading={busyId === pendingCancel?.id}
+        onConfirm={() => {
+          if (pendingCancel) runAction(pendingCancel.id, 'cancel')
+        }}
+        onClose={() => setPendingCancel(null)}
+      />
+
+      <ConfirmDialog
+        open={pendingDelete !== null}
+        title={`Delete "${pendingDelete?.title}"?`}
+        description="This will permanently delete the event and all associated ticket types. This cannot be undone."
+        confirmLabel="Delete Event"
+        isLoading={busyId === pendingDelete?.id}
+        onConfirm={() => pendingDelete && deleteEvent(pendingDelete.id)}
+        onClose={() => setPendingDelete(null)}
+      />
     </div>
   )
 }
