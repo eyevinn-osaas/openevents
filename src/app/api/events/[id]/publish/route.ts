@@ -12,9 +12,44 @@ type PublishIssue = {
   message: string
 }
 
+type ActionHint = {
+  label: string
+  href: string
+}
+
+function errorResponse(
+  message: string,
+  status: number,
+  extra?: Record<string, unknown>
+) {
+  return NextResponse.json(
+    {
+      message,
+      error: message,
+      ...(extra ?? {}),
+    },
+    { status }
+  )
+}
+
 function formatPublishError(issues: PublishIssue[]): string {
   const lines = issues.map((issue) => `${issue.section} -> ${issue.field}: ${issue.message}`)
   return `Cannot publish yet. Fix the following:\n- ${lines.join('\n- ')}`
+}
+
+function getPublishActionHint(issues: PublishIssue[], eventId: string): ActionHint {
+  const hasTicketIssue = issues.some((issue) => issue.section === 'Tickets')
+  if (hasTicketIssue) {
+    return {
+      label: 'Add a ticket type',
+      href: `/dashboard/events/${eventId}/tickets`,
+    }
+  }
+
+  return {
+    label: 'Edit event details',
+    href: `/dashboard/events/${eventId}/edit`,
+  }
 }
 
 export async function POST(_request: NextRequest, context: RouteContext) {
@@ -38,19 +73,14 @@ export async function POST(_request: NextRequest, context: RouteContext) {
       },
     })
 
-    if (!event) {
-      return NextResponse.json({ error: 'Event not found' }, { status: 404 })
-    }
+    if (!event) return errorResponse('Event not found.', 404)
 
     if (event.organizer.userId !== user.id) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+      return errorResponse('You do not have permission to publish this event.', 403)
     }
 
     if (event.status === 'CANCELLED' || event.status === 'COMPLETED') {
-      return NextResponse.json(
-        { error: 'Cancelled or completed events cannot be published' },
-        { status: 400 }
-      )
+      return errorResponse('Cancelled or completed events cannot be published.', 400)
     }
 
     const issues: PublishIssue[] = []
@@ -153,13 +183,12 @@ export async function POST(_request: NextRequest, context: RouteContext) {
     }
 
     if (issues.length > 0) {
-      return NextResponse.json(
-        {
-          error: formatPublishError(issues),
-          details: issues,
-        },
-        { status: 400 }
-      )
+      const action = getPublishActionHint(issues, id)
+      return errorResponse(`Cannot publish: ${issues[0].message}`, 400, {
+        details: issues,
+        action,
+        summary: formatPublishError(issues),
+      })
     }
 
     const updated = await prisma.event.update({
@@ -174,18 +203,18 @@ export async function POST(_request: NextRequest, context: RouteContext) {
   } catch (error) {
     if (error instanceof Error) {
       if (error.message === 'Unauthorized') {
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+        return errorResponse('Unauthorized.', 401)
       }
 
       if (error.message.includes('Forbidden')) {
-        return NextResponse.json({ error: error.message }, { status: 403 })
+        return errorResponse(error.message, 403)
       }
     }
 
     console.error('Publish event failed:', error)
-    return NextResponse.json(
-      { error: 'Failed to publish event' },
-      { status: 500 }
+    return errorResponse(
+      'Could not publish the event due to a system error. Please try again.',
+      500
     )
   }
 }

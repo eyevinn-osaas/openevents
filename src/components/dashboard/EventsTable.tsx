@@ -23,13 +23,54 @@ type EventsTableProps = {
   }>
 }
 
+type ErrorAction = {
+  label: string
+  href: string
+}
+
+type UiActionError = {
+  message: string
+  action?: ErrorAction
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
+}
+
+function parseUiActionError(payload: unknown, fallbackMessage: string): UiActionError {
+  if (!isRecord(payload)) return { message: fallbackMessage }
+
+  const messageValue = payload.message ?? payload.error
+  const message =
+    typeof messageValue === 'string' && messageValue.trim().length > 0
+      ? messageValue
+      : fallbackMessage
+
+  const actionValue = payload.action
+  if (!isRecord(actionValue)) return { message }
+
+  const label = actionValue.label
+  const href = actionValue.href
+  if (typeof label !== 'string' || typeof href !== 'string') {
+    return { message }
+  }
+
+  if (!href.startsWith('/')) return { message }
+
+  return {
+    message,
+    action: { label, href },
+  }
+}
+
 export function EventsTable({ events }: EventsTableProps) {
   const [busyId, setBusyId] = useState<string | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<UiActionError | null>(null)
 
   async function runAction(eventId: string, action: 'publish' | 'cancel') {
     setBusyId(eventId)
     setError(null)
+    const actionLabel = action === 'publish' ? 'publish' : 'cancel'
 
     try {
       const endpoint = action === 'publish' ? `/api/events/${eventId}/publish` : `/api/events/${eventId}/cancel`
@@ -38,13 +79,22 @@ export function EventsTable({ events }: EventsTableProps) {
         headers: { 'Content-Type': 'application/json' },
         body: action === 'cancel' ? JSON.stringify({}) : undefined,
       })
-      const json = await response.json()
+      const json = await response.json().catch(() => null)
       if (!response.ok) {
-        throw new Error(json?.error || `Failed to ${action} event`)
+        setError(
+          parseUiActionError(
+            json,
+            `Could not ${actionLabel} the event due to a system error. Please try again.`
+          )
+        )
+        return
       }
       window.location.reload()
     } catch (actionError) {
-      setError(actionError instanceof Error ? actionError.message : 'Action failed')
+      console.error(`Failed to ${action} event`, actionError)
+      setError({
+        message: `Could not ${actionLabel} the event due to a system error. Please try again.`,
+      })
     } finally {
       setBusyId(null)
     }
@@ -61,13 +111,22 @@ export function EventsTable({ events }: EventsTableProps) {
       const response = await fetch(`/api/events/${eventId}`, {
         method: 'DELETE',
       })
-      const json = await response.json()
+      const json = await response.json().catch(() => null)
       if (!response.ok) {
-        throw new Error(json?.error || 'Failed to delete event')
+        setError(
+          parseUiActionError(
+            json,
+            'Could not delete the event due to a system error. Please try again.'
+          )
+        )
+        return
       }
       window.location.reload()
     } catch (deleteError) {
-      setError(deleteError instanceof Error ? deleteError.message : 'Delete failed')
+      console.error('Failed to delete event', deleteError)
+      setError({
+        message: 'Could not delete the event due to a system error. Please try again.',
+      })
     } finally {
       setBusyId(null)
     }
@@ -83,7 +142,19 @@ export function EventsTable({ events }: EventsTableProps) {
 
   return (
     <div className="overflow-hidden rounded-xl border border-gray-200 bg-white">
-      {error ? <p className="border-b border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p> : null}
+      {error ? (
+        <div className="border-b border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          <p>{error.message}</p>
+          {error.action ? (
+            <Link
+              href={error.action.href}
+              className="mt-1 inline-block font-medium text-red-800 underline hover:text-red-900"
+            >
+              {`${error.action.label} ->`}
+            </Link>
+          ) : null}
+        </div>
+      ) : null}
       <div className="overflow-x-auto">
         <table className="min-w-full divide-y divide-gray-200 text-sm">
           <thead className="bg-gray-50">
