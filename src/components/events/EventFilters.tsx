@@ -1,4 +1,9 @@
 type EventFiltersProps = {
+  categories: Array<{
+    id: string
+    name: string
+    slug: string
+  }>
   initial: {
     search?: string
     category?: string
@@ -8,7 +13,7 @@ type EventFiltersProps = {
   }
 }
 
-export function EventFilters({ initial }: EventFiltersProps) {
+export function EventFilters({ categories, initial }: EventFiltersProps) {
   return (
     <form className="grid grid-cols-1 gap-3 rounded-xl border border-gray-200 bg-white p-4 md:grid-cols-5" method="GET">
       <input
@@ -17,12 +22,19 @@ export function EventFilters({ initial }: EventFiltersProps) {
         placeholder="Search events"
         className="h-10 rounded-md border border-gray-300 px-3 text-sm"
       />
-      <input
+      <select
         name="category"
-        defaultValue={initial.category}
-        placeholder="Category"
+        defaultValue={initial.category ?? ''}
+        aria-label="Filter by category"
         className="h-10 rounded-md border border-gray-300 px-3 text-sm"
-      />
+      >
+        <option value="">All categories</option>
+        {categories.map((category) => (
+          <option key={category.id} value={category.slug}>
+            {category.name}
+          </option>
+        ))}
+      </select>
       <input
         name="location"
         defaultValue={initial.location}

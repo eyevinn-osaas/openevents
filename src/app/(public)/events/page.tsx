@@ -11,8 +11,14 @@ type PageProps = {
 }
 
 function readParam(value: string | string[] | undefined): string | undefined {
-  if (Array.isArray(value)) return value[0]
-  return value
+  const resolved = Array.isArray(value) ? value[0] : value
+
+  if (typeof resolved !== 'string') {
+    return undefined
+  }
+
+  const trimmed = resolved.trim()
+  return trimmed.length > 0 ? trimmed : undefined
 }
 
 export default async function EventsPage({ searchParams }: PageProps) {
@@ -71,7 +77,7 @@ export default async function EventsPage({ searchParams }: PageProps) {
     }
   }
 
-  const [events, total] = await prisma.$transaction([
+  const [events, total, categories] = await prisma.$transaction([
     prisma.event.findMany({
       where,
       include: {
@@ -95,6 +101,16 @@ export default async function EventsPage({ searchParams }: PageProps) {
       take: pageSize,
     }),
     prisma.event.count({ where }),
+    prisma.category.findMany({
+      select: {
+        id: true,
+        name: true,
+        slug: true,
+      },
+      orderBy: {
+        name: 'asc',
+      },
+    }),
   ])
 
   const totalPages = Math.max(Math.ceil(total / pageSize), 1)
@@ -118,6 +134,7 @@ export default async function EventsPage({ searchParams }: PageProps) {
       </div>
 
       <EventFilters
+        categories={categories}
         initial={{
           search,
           category,
