@@ -7,18 +7,27 @@ import {
 } from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 
-// MinIO/S3 client configuration
-const s3Client = new S3Client({
-  endpoint: process.env.S3_ENDPOINT,
-  region: process.env.S3_REGION || 'us-east-1',
-  credentials: {
-    accessKeyId: process.env.S3_ACCESS_KEY_ID!,
-    secretAccessKey: process.env.S3_SECRET_ACCESS_KEY!,
-  },
-  forcePathStyle: true, // Required for MinIO
-})
+// Lazy-initialized S3 client to ensure env vars are loaded by instrumentation
+let _s3Client: S3Client | null = null
 
-const BUCKET_NAME = process.env.S3_BUCKET_NAME || 'openevents'
+function getS3Client(): S3Client {
+  if (!_s3Client) {
+    _s3Client = new S3Client({
+      endpoint: process.env.S3_ENDPOINT,
+      region: process.env.S3_REGION || 'us-east-1',
+      credentials: {
+        accessKeyId: process.env.S3_ACCESS_KEY_ID!,
+        secretAccessKey: process.env.S3_SECRET_ACCESS_KEY!,
+      },
+      forcePathStyle: true, // Required for MinIO
+    })
+  }
+  return _s3Client
+}
+
+function getBucketName(): string {
+  return process.env.S3_BUCKET_NAME || 'openevents'
+}
 
 export type UploadFolder = 'events' | 'speakers' | 'organizers' | 'users'
 
@@ -31,12 +40,12 @@ export async function getUploadPresignedUrl(
   expiresIn: number = 3600
 ): Promise<string> {
   const command = new PutObjectCommand({
-    Bucket: BUCKET_NAME,
+    Bucket: getBucketName(),
     Key: key,
     ContentType: contentType,
   })
 
-  return getSignedUrl(s3Client, command, { expiresIn })
+  return getSignedUrl(getS3Client(), command, { expiresIn })
 }
 
 /**
@@ -47,11 +56,11 @@ export async function getDownloadPresignedUrl(
   expiresIn: number = 3600
 ): Promise<string> {
   const command = new GetObjectCommand({
-    Bucket: BUCKET_NAME,
+    Bucket: getBucketName(),
     Key: key,
   })
 
-  return getSignedUrl(s3Client, command, { expiresIn })
+  return getSignedUrl(getS3Client(), command, { expiresIn })
 }
 
 /**
@@ -72,11 +81,11 @@ export function generateFileKey(
  */
 export async function deleteFile(key: string): Promise<void> {
   const command = new DeleteObjectCommand({
-    Bucket: BUCKET_NAME,
+    Bucket: getBucketName(),
     Key: key,
   })
 
-  await s3Client.send(command)
+  await getS3Client().send(command)
 }
 
 /**
@@ -84,11 +93,11 @@ export async function deleteFile(key: string): Promise<void> {
  */
 export async function listFiles(prefix: string): Promise<string[]> {
   const command = new ListObjectsV2Command({
-    Bucket: BUCKET_NAME,
+    Bucket: getBucketName(),
     Prefix: prefix,
   })
 
-  const response = await s3Client.send(command)
+  const response = await getS3Client().send(command)
   return response.Contents?.map((item) => item.Key!) || []
 }
 
@@ -98,7 +107,8 @@ export async function listFiles(prefix: string): Promise<string[]> {
  */
 export function getPublicUrl(key: string): string {
   const endpoint = process.env.S3_PUBLIC_URL || process.env.S3_ENDPOINT
-  return `${endpoint}/${BUCKET_NAME}/${key}`
+  return `${endpoint}/${getBucketName()}/${key}`
 }
 
-export { s3Client, BUCKET_NAME }
+// Export getters for external use
+export { getS3Client as s3Client, getBucketName as BUCKET_NAME }
