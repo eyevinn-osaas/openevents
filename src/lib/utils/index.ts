@@ -89,14 +89,12 @@ export function formatCurrency(
  * Returns consistent formatting for event cards and detail pages
  */
 export function formatEventPrice(
-  ticketTypes: Array<{ price: number | string; currency: string }>
+  ticketTypes: Array<{ price: number | string | { toNumber(): number }; currency: string }>
 ): string | null {
   if (ticketTypes.length === 0) {
     return null
   }
-  const prices = ticketTypes.map((t) =>
-    typeof t.price === 'string' ? parseFloat(t.price) : t.price
-  )
+  const prices = ticketTypes.map((t) => Number(t.price))
   const minPrice = Math.min(...prices)
   const maxPrice = Math.max(...prices)
   const currency = ticketTypes[0]?.currency || 'SEK'
