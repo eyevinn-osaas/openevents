@@ -6,12 +6,6 @@ export async function register() {
 }
 
 async function loadConfigFromOSC() {
-  // Skip if DATABASE_URL is already set
-  if (process.env.DATABASE_URL) {
-    console.log('[instrumentation] DATABASE_URL already set, skipping config fetch')
-    return
-  }
-
   // Prefer explicit config service URL injected by the platform.
   const explicitConfigServiceUrl =
     process.env.APP_CONFIG_URL ||
