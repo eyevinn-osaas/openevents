@@ -1,3 +1,4 @@
+import Link from 'next/link'
 import { revalidatePath, revalidateTag } from 'next/cache'
 import { notFound } from 'next/navigation'
 import { Prisma, PaymentMethod } from '@prisma/client'
@@ -27,6 +28,11 @@ export default async function EventOrderDetailPage({ params }: PageProps) {
       event: eventWhere,
     },
     include: {
+      event: {
+        select: {
+          title: true,
+        },
+      },
       items: {
         include: {
           ticketType: {
@@ -326,7 +332,20 @@ export default async function EventOrderDetailPage({ params }: PageProps) {
   }
 
   return (
-    <OrderDetailView
+    <div className="space-y-6">
+      <nav className="flex items-center gap-2 text-sm text-gray-500">
+        <Link href="/dashboard" className="hover:text-gray-700">Dashboard</Link>
+        <span>/</span>
+        <Link href="/dashboard/events" className="hover:text-gray-700">Events</Link>
+        <span>/</span>
+        <Link href={`/dashboard/events/${id}`} className="hover:text-gray-700">{order.event.title}</Link>
+        <span>/</span>
+        <Link href={`/dashboard/events/${id}/orders`} className="hover:text-gray-700">Orders</Link>
+        <span>/</span>
+        <span className="text-gray-900">{order.orderNumber}</span>
+      </nav>
+
+      <OrderDetailView
       order={{
         ...order,
         subtotal: Number(order.subtotal.toString()),
@@ -342,5 +361,6 @@ export default async function EventOrderDetailPage({ params }: PageProps) {
       emailAction={emailAction}
       markPaidAction={markPaidAction}
     />
+    </div>
   )
 }

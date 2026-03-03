@@ -129,6 +129,16 @@ export default async function EventOrdersPage({ params, searchParams }: PageProp
 
   return (
     <div className="space-y-6">
+      <nav className="flex items-center gap-2 text-sm text-gray-500">
+        <Link href="/dashboard" className="hover:text-gray-700">Dashboard</Link>
+        <span>/</span>
+        <Link href="/dashboard/events" className="hover:text-gray-700">Events</Link>
+        <span>/</span>
+        <Link href={`/dashboard/events/${id}`} className="hover:text-gray-700">{event.title}</Link>
+        <span>/</span>
+        <span className="text-gray-900">Orders</span>
+      </nav>
+
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-3xl font-bold text-gray-900">Orders</h1>

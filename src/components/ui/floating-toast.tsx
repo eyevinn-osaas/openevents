@@ -37,7 +37,11 @@ export function FloatingToast({ message, tone = 'success', durationMs = 3500, on
   if (!visibleMessage) return null
 
   return (
-    <div className={`fixed bottom-5 right-5 z-50 rounded-md border px-4 py-3 text-sm shadow-lg ${styles}`}>
+    <div
+      aria-live="polite"
+      aria-atomic="true"
+      className={`fixed bottom-5 right-5 z-50 rounded-md border px-4 py-3 text-sm shadow-lg ${styles}`}
+    >
       {visibleMessage}
     </div>
   )

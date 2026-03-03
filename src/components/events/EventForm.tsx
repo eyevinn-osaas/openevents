@@ -5,6 +5,7 @@ import { ChangeEvent, DragEvent, FocusEvent, useEffect, useMemo, useRef, useStat
 import { useRouter } from 'next/navigation'
 import { ChevronDown, Image as ImageIcon, Plus, Trash2, Upload, User, Video } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { FloatingToast } from '@/components/ui/floating-toast'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -749,6 +750,8 @@ export function EventForm({ mode, initialData, initialSpeakers, categories = [],
   const [speakerCropZoom, setSpeakerCropZoom] = useState(1)
   const [speakerCropPixels, setSpeakerCropPixels] = useState<Area | null>(null)
   const [isApplyingSpeakerCrop, setIsApplyingSpeakerCrop] = useState(false)
+  const [removeTicketConfirm, setRemoveTicketConfirm] = useState<number | null>(null)
+  const [discardChangesConfirm, setDiscardChangesConfirm] = useState(false)
   const [originalImageFiles, setOriginalImageFiles] = useState<Record<ImageTargetField, File | null>>({
     coverImage: null,
     bottomImage: null,
@@ -1139,15 +1142,21 @@ export function EventForm({ mode, initialData, initialSpeakers, categories = [],
     const ticket = form.ticketTypes?.[index]
     if (!ticket) return
 
-    if (ticket.id && !window.confirm('Remove this ticket type?')) {
+    if (ticket.id) {
+      setRemoveTicketConfirm(index)
       return
     }
 
+    doRemoveTicketType(index)
+  }
+
+  const doRemoveTicketType = (index: number) => {
     setForm((current) => ({
       ...current,
       ticketTypes: (current.ticketTypes || []).filter((_, ticketIndex) => ticketIndex !== index),
     }))
     setTicketErrors((current) => current.filter((_, ticketIndex) => ticketIndex !== index))
+    setRemoveTicketConfirm(null)
     setTouchedTicketFields((current) => current.filter((_, ticketIndex) => ticketIndex !== index))
   }
 
@@ -2509,6 +2518,25 @@ export function EventForm({ mode, initialData, initialSpeakers, categories = [],
     validateFieldIfActive('endDate', nextForm)
   }
 
+  function onCancel() {
+    const isDirty =
+      buildSnapshot(form) !== initialSnapshotRef.current ||
+      Boolean(croppedImageFiles.coverImage) ||
+      Boolean(croppedImageFiles.bottomImage)
+
+    if (isDirty) {
+      setDiscardChangesConfirm(true)
+      return
+    }
+
+    doNavigateAway()
+  }
+
+  function doNavigateAway() {
+    setDiscardChangesConfirm(false)
+    performCancelNavigation()
+  }
+
   function performCancelNavigation() {
     if (mode === 'create') {
       router.push('/dashboard/events')
@@ -2544,16 +2572,6 @@ export function EventForm({ mode, initialData, initialSpeakers, categories = [],
     bypassNavigationGuardRef.current = true
     window.history.back()
     window.setTimeout(continueNavigation, 0)
-  }
-
-  function onCancel() {
-    if (hasUnsavedChanges && !window.confirm('Discard unsaved changes?')) {
-      return
-    }
-
-    navigateWithHistoryGuardCleanup(() => {
-      performCancelNavigation()
-    })
   }
 
   const remoteBannerPreviewSrc =
@@ -4116,6 +4134,24 @@ export function EventForm({ mode, initialData, initialSpeakers, categories = [],
         message={toast?.message || null}
         tone={toast?.tone || 'success'}
         onDismiss={() => setToast(null)}
+      />
+
+      <ConfirmDialog
+        open={removeTicketConfirm !== null}
+        title="Remove ticket type?"
+        description="This ticket type has already been saved. Removing it will delete it when you save the form."
+        confirmLabel="Remove"
+        onConfirm={() => removeTicketConfirm !== null && doRemoveTicketType(removeTicketConfirm)}
+        onClose={() => setRemoveTicketConfirm(null)}
+      />
+
+      <ConfirmDialog
+        open={discardChangesConfirm}
+        title="Discard unsaved changes?"
+        description="You have unsaved changes. Leaving now will discard them."
+        confirmLabel="Discard changes"
+        onConfirm={doNavigateAway}
+        onClose={() => setDiscardChangesConfirm(false)}
       />
     </div>
   )

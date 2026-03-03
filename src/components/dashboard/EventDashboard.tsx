@@ -1,7 +1,5 @@
-import Link from 'next/link'
 import { EventStatus } from '@prisma/client'
-import { Download } from 'lucide-react'
-import { Button } from '@/components/ui/button'
+import { EventActionButtons } from '@/components/dashboard/EventActionButtons'
 import { EventStatusBadge } from '@/components/dashboard/EventStatusBadge'
 import { SalesTrendChart } from '@/components/dashboard/SalesTrendChart'
 import { formatCurrency, formatDateTime } from '@/lib/utils'
@@ -55,32 +53,7 @@ export function EventDashboard({ event, stats }: EventDashboardProps) {
             </p>
           </div>
 
-          <div className="flex flex-wrap gap-2">
-            <Link href={`/dashboard/events/${event.id}/edit`}>
-              <Button variant="outline">Edit Event</Button>
-            </Link>
-<Link href={`/dashboard/events/${event.id}/orders`}>
-              <Button variant="outline">View Orders</Button>
-            </Link>
-            <Link href={`/dashboard/events/${event.id}/scan`}>
-              <Button variant="outline">Scan Tickets</Button>
-            </Link>
-            <a href={`/api/dashboard/events/${event.id}/attendees/export`} download>
-              <Button variant="outline">
-                <Download className="mr-2 h-4 w-4" />
-                Export CSV
-              </Button>
-            </a>
-            <a href={`/api/dashboard/events/${event.id}/attendees/export-excel`} download>
-              <Button variant="outline">
-                <Download className="mr-2 h-4 w-4" />
-                Export Excel
-              </Button>
-            </a>
-            <Link href={`/events/${event.slug}`}>
-              <Button>Open Public Page</Button>
-            </Link>
-          </div>
+          <EventActionButtons eventId={event.id} eventSlug={event.slug} />
         </div>
       </section>
 
