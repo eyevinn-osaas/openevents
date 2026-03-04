@@ -19,7 +19,6 @@ const eventSchemaBase = z.object({
   website: z.string().url().optional().nullable(),
   coverImage: z.string().url().optional().nullable(),
   bottomImage: z.string().url().optional().nullable(),
-  videoUrl: z.string().url().optional().nullable(),
   visibility: z.enum(['PUBLIC', 'PRIVATE']).default('PUBLIC'),
   cancellationDeadlineHours: z.number().min(0).default(48),
   categoryIds: z.array(z.string()).optional(),

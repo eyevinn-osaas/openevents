@@ -117,7 +117,6 @@ export default async function EditEventPage({ params }: PageProps) {
   const eventPeople = event.speakers.filter((speaker) => resolveEventPeopleRole(speaker.socialLinks))
   const regularSpeakers = event.speakers.filter((speaker) => !resolveEventPeopleRole(speaker.socialLinks))
   const bottomImage = event.media.find((item) => item.title === 'BOTTOM_IMAGE')?.url || ''
-  const videoUrl = event.media.find((item) => item.type === 'VIDEO')?.url || ''
 
   const speakerPeople = eventPeople.filter((speaker) => resolveEventPeopleRole(speaker.socialLinks) === 'SPEAKER')
   const initialSpeakers = speakerPeople.map((speaker) => ({
@@ -187,7 +186,6 @@ export default async function EditEventPage({ params }: PageProps) {
           coverImage: event.coverImage,
           website: event.website,
           bottomImage,
-          videoUrl,
           visibility: event.visibility,
           cancellationDeadlineHours: event.cancellationDeadlineHours,
           categoryIds: event.categories.map((item) => item.categoryId),

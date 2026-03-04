@@ -20,7 +20,6 @@ import {
   Trash2,
   Upload,
   User,
-  Video,
 } from "lucide-react";
 import { EventPreviewModal } from "@/components/events/EventPreviewModal";
 import { Button } from "@/components/ui/button";
@@ -97,7 +96,6 @@ type EventFormData = {
   website?: string | null;
   coverImage?: string | null;
   bottomImage?: string | null;
-  videoUrl?: string | null;
   speakerNames?: string;
   organizerNames?: string;
   sponsorNames?: string;
@@ -139,8 +137,7 @@ type FieldKey =
   | "country"
   | "onlineUrl"
   | "coverImage"
-  | "bottomImage"
-  | "videoUrl";
+  | "bottomImage";
 
 type FieldErrors = Partial<Record<FieldKey, string>>;
 
@@ -255,7 +252,6 @@ function buildEventPayload(
     website: form.website?.trim() ? form.website.trim() : null,
     coverImage: form.coverImage || null,
     bottomImage: form.bottomImage || null,
-    videoUrl: form.videoUrl || null,
     speakerNames: validSpeakerDrafts.map((draft) => draft.name.trim()),
     organizerNames: validSpeakerDrafts.map((draft) => draft.title),
     sponsorNames: validSpeakerDrafts.map((draft) => draft.organization),
@@ -332,7 +328,6 @@ const fallbackInitialData: EventFormData = {
   website: "",
   coverImage: "",
   bottomImage: "",
-  videoUrl: "",
   speakerNames: "",
   organizerNames: "",
   sponsorNames: "",
@@ -347,12 +342,6 @@ const allowedImageMimeTypes = new Set([
   "image/webp",
   "image/gif",
 ]);
-const allowedVideoMimeTypes = new Set([
-  "video/mp4",
-  "video/webm",
-  "video/quicktime",
-]);
-
 const fieldOrder: FieldKey[] = [
   "title",
   "categoryIds",
@@ -367,7 +356,6 @@ const fieldOrder: FieldKey[] = [
   "description",
   "coverImage",
   "bottomImage",
-  "videoUrl",
 ];
 
 const ticketFieldOrder: TicketTypeFieldKey[] = [
@@ -637,7 +625,6 @@ function getFieldValidationMessage(
     }
     case "coverImage":
     case "bottomImage":
-    case "videoUrl":
       return undefined;
   }
 }
@@ -772,7 +759,6 @@ function buildSnapshot(form: EventFormData) {
     categoryIds: form.categoryIds || [],
     coverImage: form.coverImage || "",
     bottomImage: form.bottomImage || "",
-    videoUrl: form.videoUrl || "",
   });
 }
 
@@ -787,10 +773,8 @@ export function EventForm({
   const router = useRouter();
   const bannerInputRef = useRef<HTMLInputElement | null>(null);
   const bottomInputRef = useRef<HTMLInputElement | null>(null);
-  const videoInputRef = useRef<HTMLInputElement | null>(null);
   const bannerObjectUrlRef = useRef<string | null>(null);
   const bottomObjectUrlRef = useRef<string | null>(null);
-  const videoObjectUrlRef = useRef<string | null>(null);
   const cropObjectUrlRef = useRef<string | null>(null);
   const speakerImageInputRef = useRef<HTMLInputElement | null>(null);
   const speakerImageTargetKeyRef = useRef<string>("");
@@ -882,7 +866,6 @@ export function EventForm({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isUploadingBanner, setIsUploadingBanner] = useState(false);
   const [isUploadingBottom, setIsUploadingBottom] = useState(false);
-  const [isUploadingVideo, setIsUploadingVideo] = useState(false);
   const [cancellationUnit, setCancellationUnit] = useState<"hours" | "days">(
     () => {
       const h = mergedInitialData.cancellationDeadlineHours ?? 48;
@@ -926,7 +909,6 @@ export function EventForm({
   const dateTimePanelRef = useRef<HTMLDivElement | null>(null);
   const [bannerPreviewSrc, setBannerPreviewSrc] = useState<string | null>(null);
   const [bottomPreviewSrc, setBottomPreviewSrc] = useState<string | null>(null);
-  const [videoPreviewSrc, setVideoPreviewSrc] = useState<string | null>(null);
   const [imageVersion, setImageVersion] = useState(0);
   const [cropSession, setCropSession] = useState<CropSession | null>(null);
   const [cropPosition, setCropPosition] = useState({ x: 0, y: 0 });
@@ -1233,7 +1215,7 @@ export function EventForm({
       return;
     }
 
-    if (key === "coverImage" || key === "bottomImage" || key === "videoUrl") {
+    if (key === "coverImage" || key === "bottomImage") {
       clearFieldError(key);
     }
   };
@@ -1705,9 +1687,6 @@ export function EventForm({
       if (bottomObjectUrlRef.current) {
         URL.revokeObjectURL(bottomObjectUrlRef.current);
       }
-      if (videoObjectUrlRef.current) {
-        URL.revokeObjectURL(videoObjectUrlRef.current);
-      }
       if (cropObjectUrlRef.current) {
         URL.revokeObjectURL(cropObjectUrlRef.current);
       }
@@ -1879,7 +1858,6 @@ export function EventForm({
       if (
         isUploadingBanner ||
         isUploadingBottom ||
-        isUploadingVideo ||
         isPreparingCrop ||
         isApplyingCrop ||
         isApplyingSpeakerCrop
@@ -1989,7 +1967,6 @@ export function EventForm({
     isPreparingCrop,
     isUploadingBanner,
     isUploadingBottom,
-    isUploadingVideo,
     mode,
   ]);
 
@@ -2865,101 +2842,6 @@ export function EventForm({
     }
   }
 
-  async function uploadEventVideo(file: File) {
-    if (!form.id && mode === "edit") {
-      throw new Error("Save the event once before uploading videos");
-    }
-
-    const uploadRes = await fetch("/api/upload/presigned", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        folder: "events",
-        entityId: form.id || "new",
-        filename: file.name,
-        contentType: file.type,
-        size: file.size,
-      }),
-    });
-
-    if (!uploadRes.ok) {
-      const errorData = await uploadRes.json().catch(() => null);
-      if (errorData?.details?.size) {
-        throw new Error("Video file is too large. Maximum size is 50 MB.");
-      }
-      throw new Error(
-        (errorData?.error as string | undefined) ||
-          "Failed to create upload URL",
-      );
-    }
-
-    const uploadData = await uploadRes.json();
-    const uploadUrl = uploadData?.data?.uploadUrl as string | undefined;
-    const publicUrl = uploadData?.data?.publicUrl as string | undefined;
-
-    if (!uploadUrl || !publicUrl) throw new Error("Invalid upload response");
-
-    const putRes = await fetch(uploadUrl, {
-      method: "PUT",
-      headers: { "Content-Type": file.type },
-      body: file,
-    });
-
-    if (!putRes.ok) throw new Error("Failed to upload video");
-
-    updateField("videoUrl", publicUrl);
-  }
-
-  async function onVideoSelected(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0];
-    if (!file) return;
-    event.target.value = "";
-
-    if (!allowedVideoMimeTypes.has(file.type)) {
-      setFieldErrors((current) => ({
-        ...current,
-        videoUrl: "Please select an MP4, WebM, or MOV video.",
-      }));
-      setToast({ message: "Unsupported video format", tone: "error" });
-      return;
-    }
-
-    if (videoObjectUrlRef.current) {
-      URL.revokeObjectURL(videoObjectUrlRef.current);
-    }
-    const objectUrl = URL.createObjectURL(file);
-    videoObjectUrlRef.current = objectUrl;
-    setVideoPreviewSrc(objectUrl);
-
-    setIsUploadingVideo(true);
-    try {
-      await uploadEventVideo(file);
-    } catch (videoError) {
-      const message =
-        videoError instanceof Error
-          ? videoError.message
-          : "Video upload failed";
-      setFieldErrors((current) => ({ ...current, videoUrl: message }));
-      setToast({ message, tone: "error" });
-    } finally {
-      setIsUploadingVideo(false);
-    }
-  }
-
-  function deleteVideo() {
-    if (videoObjectUrlRef.current) {
-      URL.revokeObjectURL(videoObjectUrlRef.current);
-      videoObjectUrlRef.current = null;
-    }
-    setVideoPreviewSrc(null);
-    updateField("videoUrl", "");
-    setFieldErrors((current) => {
-      const next = { ...current };
-      delete next.videoUrl;
-      return next;
-    });
-  }
-
   function addSpeakerDraft() {
     setSpeakerDrafts((current) => [
       ...current,
@@ -3426,7 +3308,6 @@ export function EventForm({
     bannerPreviewSrc || remoteBannerPreviewSrc || form.coverImage || null;
   const bottomImageSrc =
     bottomPreviewSrc || remoteBottomPreviewSrc || form.bottomImage || null;
-  const videoSrc = videoPreviewSrc || form.videoUrl || null;
   const isBannerDropActive = activeDropTarget === "coverImage";
   const isBottomDropActive = activeDropTarget === "bottomImage";
 
@@ -5291,27 +5172,14 @@ export function EventForm({
           className="hidden"
           disabled={isUploadingBottom}
         />
-        <input
-          ref={videoInputRef}
-          id="videoUpload"
-          type="file"
-          accept="video/mp4,video/webm,video/quicktime"
-          onChange={(event) => void onVideoSelected(event)}
-          className="hidden"
-          disabled={isUploadingVideo}
-        />
-
         <div>
           <h3 className="text-2xl font-bold text-black">Event Media</h3>
           <p className="mt-1 text-base text-[#4a5565]">
-            Add images and videos to showcase your event
+            Add an image to showcase your event
           </p>
         </div>
 
-        <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
-          {/* Images column */}
-          <div className="space-y-2">
-            <p className="text-base font-semibold text-black">Images</p>
+        <div className="space-y-2">
 
             <button
               id="bottomImage"
@@ -5375,7 +5243,7 @@ export function EventForm({
                       ? "Uploading..."
                       : isBottomDropActive
                         ? "Drop image here"
-                        : "Click to upload images"}
+                        : "Click here to add a footer image"}
                   </span>
                 </div>
               )}
@@ -5416,70 +5284,11 @@ export function EventForm({
                 ) : null}
               </div>
             ) : null}
-            {fieldErrors.bottomImage ? (
-              <p id="bottomImage-error" className="text-sm text-red-600">
-                {fieldErrors.bottomImage}
-              </p>
-            ) : null}
-          </div>
-
-          {/* Videos column */}
-          <div className="space-y-2">
-            <p className="text-base font-semibold text-black">Videos</p>
-
-            {videoSrc ? (
-              <div className="overflow-hidden rounded-[10px] border-[1.6px] border-[#d1d5dc]">
-                <video
-                  src={videoSrc}
-                  className="w-full"
-                  controls
-                  preload="metadata"
-                />
-              </div>
-            ) : (
-              <button
-                id="videoUrl"
-                type="button"
-                onClick={() => videoInputRef.current?.click()}
-                disabled={isUploadingVideo}
-                aria-label="Upload video"
-                aria-describedby={
-                  fieldErrors.videoUrl ? "videoUrl-error" : undefined
-                }
-                className="group relative w-full cursor-pointer overflow-hidden rounded-[10px] border-[1.6px] border-[#d1d5dc] bg-white text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5c8bd9] focus-visible:ring-offset-2 hover:border-[#5c8bd9] hover:bg-blue-50/10 disabled:cursor-not-allowed disabled:opacity-70"
-              >
-                <div className="flex flex-col items-center justify-center gap-2 px-[25.6px] py-[25.6px]">
-                  <Video
-                    className="h-10 w-10 text-[#5c8bd9]"
-                    aria-hidden="true"
-                  />
-                  <span className="text-sm font-medium text-[#4a5565]">
-                    {isUploadingVideo
-                      ? "Uploading..."
-                      : "Click to upload videos"}
-                  </span>
-                </div>
-              </button>
-            )}
-
-            {videoSrc ? (
-              <div className="flex flex-wrap gap-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  isLoading={isUploadingVideo}
-                  onClick={deleteVideo}
-                >
-                  Delete video
-                </Button>
-              </div>
-            ) : null}
-            {fieldErrors.videoUrl ? (
-              <p id="videoUrl-error" className="text-sm text-red-600">
-                {fieldErrors.videoUrl}
-              </p>
-            ) : null}
-          </div>
+          {fieldErrors.bottomImage ? (
+            <p id="bottomImage-error" className="text-sm text-red-600">
+              {fieldErrors.bottomImage}
+            </p>
+          ) : null}
         </div>
       </section>
 

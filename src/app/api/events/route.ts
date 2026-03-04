@@ -60,7 +60,6 @@ export async function POST(request: NextRequest) {
       sponsorNames,
       speakerPhotos,
       speakerLinks,
-      videoUrl,
       ...input
     } = parsed.data
 
@@ -111,13 +110,9 @@ export async function POST(request: NextRequest) {
         onlineUrl: input.onlineUrl,
         website: input.website,
         coverImage: input.coverImage,
-        media: (() => {
-          const items = [
-            ...(input.bottomImage ? [{ url: input.bottomImage, type: 'IMAGE' as const, title: 'BOTTOM_IMAGE', sortOrder: 999 }] : []),
-            ...(videoUrl ? [{ url: videoUrl, type: 'VIDEO' as const, title: 'EVENT_VIDEO', sortOrder: 1000 }] : []),
-          ]
-          return items.length ? { create: items } : undefined
-        })(),
+        media: input.bottomImage
+          ? { create: [{ url: input.bottomImage, type: 'IMAGE' as const, title: 'BOTTOM_IMAGE', sortOrder: 999 }] }
+          : undefined,
         speakers: peopleCreateData.length
           ? {
               create: peopleCreateData,

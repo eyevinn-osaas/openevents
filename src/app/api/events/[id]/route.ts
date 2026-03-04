@@ -86,7 +86,6 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       categoryIds,
       status,
       bottomImage,
-      videoUrl,
       speakerNames,
       organizerNames,
       sponsorNames,
@@ -181,27 +180,6 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
               type: 'IMAGE',
               title: 'BOTTOM_IMAGE',
               sortOrder: 999,
-            },
-          })
-        }
-      }
-
-      if (videoUrl !== undefined) {
-        await tx.eventMedia.deleteMany({
-          where: {
-            eventId: id,
-            type: 'VIDEO',
-          },
-        })
-
-        if (videoUrl) {
-          await tx.eventMedia.create({
-            data: {
-              eventId: id,
-              url: videoUrl,
-              type: 'VIDEO',
-              title: 'EVENT_VIDEO',
-              sortOrder: 1000,
             },
           })
         }
