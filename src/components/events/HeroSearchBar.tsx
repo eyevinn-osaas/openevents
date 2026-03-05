@@ -9,7 +9,8 @@ export function HeroSearchBar({ categories }: { categories: Category[] }) {
   const router = useRouter()
 
   const [search, setSearch] = useState('')
-  const [selectedDate, setSelectedDate] = useState<Date | null>(null)
+  const [dateFrom, setDateFrom] = useState<Date | null>(null)
+  const [dateTo, setDateTo] = useState<Date | null>(null)
   const [location, setLocation] = useState('')
   const [selectedCategory, setSelectedCategory] = useState<Category | null>(null)
   const [openPanel, setOpenPanel] = useState<'date' | 'location' | 'category' | null>(null)
@@ -34,7 +35,8 @@ export function HeroSearchBar({ categories }: { categories: Category[] }) {
   const handleSearch = () => {
     const params = new URLSearchParams()
     if (search.trim()) params.set('search', search.trim())
-    if (selectedDate) params.set('startDate', selectedDate.toISOString().split('T')[0])
+    if (dateFrom) params.set('startDate', dateFrom.toISOString().split('T')[0])
+    if (dateTo) params.set('endDate', dateTo.toISOString().split('T')[0])
     if (location.trim()) params.set('location', location.trim())
     if (selectedCategory) params.set('category', selectedCategory.slug)
     router.push(`/events${params.toString() ? '?' + params.toString() : ''}`)
@@ -62,28 +64,56 @@ export function HeroSearchBar({ categories }: { categories: Category[] }) {
   while (calendarCells.length % 7 !== 0) calendarCells.push(null)
 
   const today = new Date()
-  const isSelectedDay = (d: number) =>
-    selectedDate?.getFullYear() === year &&
-    selectedDate?.getMonth() === month &&
-    selectedDate?.getDate() === d
   const isToday = (d: number) =>
     today.getFullYear() === year &&
     today.getMonth() === month &&
     today.getDate() === d
 
-  const selectDay = (d: number) => {
-    setSelectedDate(new Date(year, month, d))
-    setOpenPanel(null)
+  const isSameDay = (a: Date, b: Date) =>
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate()
+
+  const isRangeStart = (d: number) => !!dateFrom && isSameDay(dateFrom, new Date(year, month, d))
+  const isRangeEnd = (d: number) => !!dateTo && isSameDay(dateTo, new Date(year, month, d))
+  const isInRange = (d: number) => {
+    if (!dateFrom || !dateTo) return false
+    const t = new Date(year, month, d).getTime()
+    return t > dateFrom.getTime() && t < dateTo.getTime()
   }
 
-  // Locale-aware date formatting for selected date display
-  const formatDate = (d: Date) =>
-    new Intl.DateTimeFormat('en', { month: 'short', day: 'numeric', year: 'numeric' }).format(d)
+  const selectDay = (d: number) => {
+    const clicked = new Date(year, month, d)
+    if (!dateFrom || dateTo) {
+      // Start a fresh selection
+      setDateFrom(clicked)
+      setDateTo(null)
+    } else {
+      // dateFrom set, awaiting dateTo
+      if (clicked >= dateFrom) {
+        setDateTo(clicked)
+        setOpenPanel(null)
+      } else {
+        // Clicked before dateFrom — restart with new dateFrom
+        setDateFrom(clicked)
+        setDateTo(null)
+      }
+    }
+  }
+
+  const formatShort = (d: Date) =>
+    new Intl.DateTimeFormat('en', { month: 'short', day: 'numeric' }).format(d)
+
+  const dateLabel = dateFrom && dateTo
+    ? `${formatShort(dateFrom)} – ${formatShort(dateTo)}`
+    : dateFrom
+      ? `From ${formatShort(dateFrom)}`
+      : 'Date'
 
   return (
     <div ref={containerRef} className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
       {/* ── Pill bar ───────────────────────────────────────────────────────── */}
-      <div className="flex items-center bg-[#f0f0f0] rounded-[29px] h-[58px] px-3">
+      <div className="flex items-center bg-[#f2f2f4] rounded-[29px] h-[58px] px-3">
         {/* Search text */}
         <input
           type="text"
@@ -91,22 +121,26 @@ export function HeroSearchBar({ categories }: { categories: Category[] }) {
           onChange={e => setSearch(e.target.value)}
           onKeyDown={e => e.key === 'Enter' && handleSearch()}
           placeholder="Search for events"
-          className="flex-1 min-w-0 bg-transparent outline-none text-[16px] text-black placeholder-gray-500 px-4"
+          className="flex-1 min-w-0 bg-transparent outline-none text-[16px] text-black placeholder-[#828283] px-4 font-['Outfit',sans-serif]"
         />
 
         {/* ── Date ─────────────────────────────────────────────────────────── */}
         <div className="relative flex items-center h-full">
-          <div className="h-6 w-px bg-gray-300 shrink-0" />
+          <div className="h-6 w-px bg-[#d1d5dc] shrink-0" />
           <button
             onClick={() => togglePanel('date')}
-            className="flex items-center gap-1.5 px-5 py-2 text-[16px] text-black rounded-full hover:bg-black/[0.06] transition-colors whitespace-nowrap"
+            className="flex items-center gap-1.5 px-5 py-2 text-[16px] text-black rounded-full hover:bg-black/[0.06] transition-colors whitespace-nowrap font-['Outfit',sans-serif]"
           >
-            {selectedDate ? formatDate(selectedDate) : 'Date'}
+            {dateLabel}
             <ChevronDown />
           </button>
 
           {openPanel === 'date' && (
             <div className="absolute top-[calc(100%+12px)] left-0 z-50 bg-white rounded-2xl shadow-2xl p-5 w-[320px]">
+              {/* Step hint */}
+              <p className="text-[12px] font-semibold text-blue-600 uppercase tracking-wide mb-3">
+                {!dateFrom || dateTo ? 'Select start date' : 'Select end date'}
+              </p>
               {/* Month navigation */}
               <div className="flex items-center justify-between mb-4">
                 <button
@@ -138,35 +172,48 @@ export function HeroSearchBar({ categories }: { categories: Category[] }) {
               </div>
 
               {/* Day grid */}
-              <div className="grid grid-cols-7 gap-y-0.5">
-                {calendarCells.map((day, i) => (
-                  <div key={i} className="flex justify-center">
-                    {day ? (
+              <div className="grid grid-cols-7">
+                {calendarCells.map((day, i) => {
+                  if (!day) return <div key={i} className="h-10" />
+                  const start = isRangeStart(day)
+                  const end = isRangeEnd(day)
+                  const inRange = isInRange(day)
+                  const singleDay = start && end
+                  return (
+                    <div
+                      key={i}
+                      className={`relative h-10 flex items-center justify-center
+                        ${!singleDay && (inRange || (start && dateTo) || (end && dateFrom))
+                          ? 'bg-blue-100' : ''}
+                        ${!singleDay && start && dateTo ? 'rounded-l-full' : ''}
+                        ${!singleDay && end ? 'rounded-r-full' : ''}
+                      `}
+                    >
                       <button
                         onClick={() => selectDay(day)}
-                        className={`w-10 h-10 rounded-full text-[14px] font-medium transition-colors flex items-center justify-center
-                          ${isSelectedDay(day)
+                        className={`w-9 h-9 rounded-full text-[14px] font-medium transition-colors flex items-center justify-center z-10
+                          ${start || end
                             ? 'bg-blue-600 text-white'
-                            : isToday(day)
-                              ? 'border-2 border-blue-500 text-blue-600 hover:bg-blue-50'
-                              : 'text-gray-800 hover:bg-gray-100'
+                            : inRange
+                              ? 'text-blue-700 hover:bg-blue-200'
+                              : isToday(day)
+                                ? 'border-2 border-blue-500 text-blue-600 hover:bg-blue-50'
+                                : 'text-gray-800 hover:bg-gray-100'
                           }`}
                       >
                         {day}
                       </button>
-                    ) : (
-                      <div className="w-10 h-10" />
-                    )}
-                  </div>
-                ))}
+                    </div>
+                  )
+                })}
               </div>
 
-              {selectedDate && (
+              {(dateFrom || dateTo) && (
                 <button
-                  onClick={() => setSelectedDate(null)}
+                  onClick={() => { setDateFrom(null); setDateTo(null) }}
                   className="mt-3 w-full text-center text-[13px] text-gray-400 hover:text-gray-600 transition-colors py-1"
                 >
-                  Clear date
+                  Clear dates
                 </button>
               )}
             </div>
@@ -175,10 +222,10 @@ export function HeroSearchBar({ categories }: { categories: Category[] }) {
 
         {/* ── Location ─────────────────────────────────────────────────────── */}
         <div className="relative flex items-center h-full">
-          <div className="h-6 w-px bg-gray-300 shrink-0" />
+          <div className="h-6 w-px bg-[#d1d5dc] shrink-0" />
           <button
             onClick={() => togglePanel('location')}
-            className="flex items-center gap-1.5 px-5 py-2 text-[16px] text-black rounded-full hover:bg-black/[0.06] transition-colors whitespace-nowrap max-w-[160px] truncate"
+            className="flex items-center gap-1.5 px-5 py-2 text-[16px] text-black rounded-full hover:bg-black/[0.06] transition-colors whitespace-nowrap max-w-[160px] font-['Outfit',sans-serif]"
           >
             <span className="truncate">{location || 'Location'}</span>
             <ChevronDown />
@@ -214,10 +261,10 @@ export function HeroSearchBar({ categories }: { categories: Category[] }) {
 
         {/* ── Category ─────────────────────────────────────────────────────── */}
         <div className="relative flex items-center h-full">
-          <div className="h-6 w-px bg-gray-300 shrink-0" />
+          <div className="h-6 w-px bg-[#d1d5dc] shrink-0" />
           <button
             onClick={() => togglePanel('category')}
-            className="flex items-center gap-1.5 px-5 py-2 text-[16px] text-black rounded-full hover:bg-black/[0.06] transition-colors whitespace-nowrap"
+            className="flex items-center gap-1.5 px-5 py-2 text-[16px] text-black rounded-full hover:bg-black/[0.06] transition-colors whitespace-nowrap font-['Outfit',sans-serif]"
           >
             {selectedCategory?.name || 'Category'}
             <ChevronDown />
@@ -241,7 +288,8 @@ export function HeroSearchBar({ categories }: { categories: Category[] }) {
                     // Immediately navigate with category filter (#204)
                     const params = new URLSearchParams()
                     if (search.trim()) params.set('search', search.trim())
-                    if (selectedDate) params.set('startDate', selectedDate.toISOString().split('T')[0])
+                    if (dateFrom) params.set('startDate', dateFrom.toISOString().split('T')[0])
+                    if (dateTo) params.set('endDate', dateTo.toISOString().split('T')[0])
                     if (location.trim()) params.set('location', location.trim())
                     params.set('category', cat.slug)
                     router.push(`/events?${params.toString()}`)
