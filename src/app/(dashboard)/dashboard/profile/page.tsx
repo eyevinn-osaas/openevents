@@ -1,23 +1,23 @@
 import Link from 'next/link'
-import { redirect } from 'next/navigation'
 import { requireOrganizerProfile } from '@/lib/dashboard/organizer'
 
 export default async function OrganizerProfilePage() {
   const { user, organizerProfile } = await requireOrganizerProfile()
-
-  // Super admins without organizer profiles should use the admin panel
-  if (!organizerProfile) {
-    redirect('/admin')
-  }
-
-  const socialLinks = (organizerProfile.socialLinks as Record<string, string> | null) || {}
+  const socialLinks = (organizerProfile?.socialLinks as Record<string, string> | null) || {}
+  const orgName =
+    organizerProfile?.orgName ||
+    user.name ||
+    user.email.split('@')[0] ||
+    'Organization'
+  const website = organizerProfile?.website || null
+  const description = organizerProfile?.description || null
 
   return (
     <div className="space-y-6">
       <section className="rounded-xl border border-gray-200 bg-white p-6">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div>
-            <h1 className="text-3xl font-bold text-gray-900">{organizerProfile.orgName}</h1>
+            <h1 className="text-3xl font-bold text-gray-900">{orgName}</h1>
             <p className="mt-1 text-sm text-gray-600">Organizer profile</p>
           </div>
           <Link
@@ -36,14 +36,14 @@ export default async function OrganizerProfilePage() {
           <div>
             <p className="font-medium text-gray-900">Website</p>
             <p className="mt-1">
-              {organizerProfile.website ? (
+              {website ? (
                 <a
-                  href={organizerProfile.website}
+                  href={website}
                   target="_blank"
                   rel="noreferrer"
                   className="text-[#5C8BD9] hover:underline"
                 >
-                  {organizerProfile.website}
+                  {website}
                 </a>
               ) : (
                 'Not set'
@@ -52,7 +52,7 @@ export default async function OrganizerProfilePage() {
           </div>
           <div className="sm:col-span-2">
             <p className="font-medium text-gray-900">About</p>
-            <p className="mt-1 whitespace-pre-wrap">{organizerProfile.description || 'No description yet.'}</p>
+            <p className="mt-1 whitespace-pre-wrap">{description || 'No description yet.'}</p>
           </div>
           <div>
             <p className="font-medium text-gray-900">LinkedIn</p>

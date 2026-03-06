@@ -1,5 +1,4 @@
 import { revalidatePath } from 'next/cache'
-import { redirect } from 'next/navigation'
 import { prisma } from '@/lib/db'
 import { requireOrganizerProfile } from '@/lib/dashboard/organizer'
 import { OrganizerProfileForm } from '@/components/dashboard/OrganizerProfileForm'
@@ -7,35 +6,36 @@ import { OrganizerProfileForm } from '@/components/dashboard/OrganizerProfileFor
 export default async function OrganizerSettingsPage() {
   const { user, organizerProfile } = await requireOrganizerProfile()
 
-  // Super admins without an organizer profile should use the admin panel
-  if (!organizerProfile) {
-    redirect('/admin')
-  }
-
   async function updateOrganizerProfile(formData: FormData) {
     'use server'
 
-    const { organizerProfile: profile } = await requireOrganizerProfile()
-
-    if (!profile) {
-      throw new Error('Organizer profile not found')
-    }
+    const { user: currentUser, organizerProfile: profile } = await requireOrganizerProfile()
 
     const orgName = String(formData.get('orgName') || '').trim()
+    const fallbackOrgName = currentUser.name?.trim() || currentUser.email.split('@')[0] || 'Organization'
+    const normalizedOrgName = orgName || fallbackOrgName
     const description = String(formData.get('description') || '').trim() || null
     const website = String(formData.get('website') || '').trim() || null
     const logo = String(formData.get('logo') || '').trim() || null
 
-    const existingSocialLinks = (profile.socialLinks as Record<string, string> | null) || {}
+    const existingSocialLinks = (profile?.socialLinks as Record<string, string> | null) || {}
     const socialLinks = {
       ...existingSocialLinks,
       linkedin: String(formData.get('linkedin') || '').trim(),
     }
 
-    await prisma.organizerProfile.update({
-      where: { id: profile.id },
-      data: {
-        orgName,
+    await prisma.organizerProfile.upsert({
+      where: { userId: currentUser.id },
+      update: {
+        orgName: normalizedOrgName,
+        description,
+        website,
+        logo,
+        socialLinks,
+      },
+      create: {
+        userId: currentUser.id,
+        orgName: normalizedOrgName,
         description,
         website,
         logo,
@@ -44,17 +44,18 @@ export default async function OrganizerSettingsPage() {
     })
 
     revalidatePath('/dashboard/settings')
+    revalidatePath('/dashboard/profile')
   }
 
   return (
     <OrganizerProfileForm
       initial={{
         userId: user.id,
-        orgName: organizerProfile.orgName,
-        description: organizerProfile.description,
-        logo: organizerProfile.logo,
-        website: organizerProfile.website,
-        socialLinks: (organizerProfile.socialLinks as Record<string, string> | null) || {},
+        orgName: organizerProfile?.orgName || user.name || user.email.split('@')[0] || '',
+        description: organizerProfile?.description || '',
+        logo: organizerProfile?.logo || null,
+        website: organizerProfile?.website || '',
+        socialLinks: (organizerProfile?.socialLinks as Record<string, string> | null) || {},
       }}
       action={updateOrganizerProfile}
     />
