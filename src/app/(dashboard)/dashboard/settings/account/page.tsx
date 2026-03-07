@@ -37,7 +37,7 @@ function parseDeletionNotice(value: string | undefined): DeletionNotice {
 const emailSchema = z.string().email('Invalid email format').min(1, 'Email is required')
 
 export default async function AccountSettingsPage({ searchParams }: PageProps) {
-  const user = await requireRole('ORGANIZER')
+  const user = await requireRole(['ORGANIZER', 'SUPER_ADMIN'])
   const query = await searchParams
   const deletionNotice = parseDeletionNotice(firstQueryValue(query.deletion))
 
@@ -64,7 +64,7 @@ export default async function AccountSettingsPage({ searchParams }: PageProps) {
   async function updateEmailAction(formData: FormData) {
     'use server'
 
-    const currentUser = await requireRole('ORGANIZER')
+    const currentUser = await requireRole(['ORGANIZER', 'SUPER_ADMIN'])
     const rawEmail = String(formData.get('email') || '').trim().toLowerCase()
 
     // Validate email format
@@ -114,7 +114,7 @@ export default async function AccountSettingsPage({ searchParams }: PageProps) {
   async function changePasswordAction(formData: FormData) {
     'use server'
 
-    const currentUser = await requireRole('ORGANIZER')
+    const currentUser = await requireRole(['ORGANIZER', 'SUPER_ADMIN'])
     const currentPassword = String(formData.get('currentPassword') || '')
     const newPassword = String(formData.get('newPassword') || '')
 
@@ -146,7 +146,7 @@ export default async function AccountSettingsPage({ searchParams }: PageProps) {
   async function deleteAccountAction(formData: FormData) {
     'use server'
 
-    const currentUser = await requireRole('ORGANIZER')
+    const currentUser = await requireRole(['ORGANIZER', 'SUPER_ADMIN'])
     const confirmPassword = String(formData.get('confirmPassword') || '')
 
     // Require password confirmation for account deletion
@@ -176,7 +176,7 @@ export default async function AccountSettingsPage({ searchParams }: PageProps) {
     'use server'
     void formData
 
-    const currentUser = await requireRole('ORGANIZER')
+    const currentUser = await requireRole(['ORGANIZER', 'SUPER_ADMIN'])
     await cancelAccountDeletionForUser(currentUser.id)
 
     revalidatePath('/dashboard/settings/account')
