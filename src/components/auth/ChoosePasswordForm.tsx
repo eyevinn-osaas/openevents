@@ -5,13 +5,13 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { Eye, EyeOff, Lock } from 'lucide-react'
-import { useSession } from 'next-auth/react'
+import { signIn, useSession } from 'next-auth/react'
 import { choosePasswordSchema, type ChoosePasswordInput } from '@/lib/validations/auth'
 
 export function ChoosePasswordForm() {
   const router = useRouter()
   const searchParams = useSearchParams()
-  const { update } = useSession()
+  const { data: session } = useSession()
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [showPassword, setShowPassword] = useState(false)
@@ -42,7 +42,24 @@ export function ChoosePasswordForm() {
         return
       }
 
-      const updatedSession = await update()
+      const email = session?.user?.email
+      if (!email) {
+        router.push('/login')
+        router.refresh()
+        return
+      }
+
+      const loginResult = await signIn('credentials', {
+        email,
+        password: data.password,
+        redirect: false,
+      })
+
+      if (loginResult?.error) {
+        router.push('/login')
+        router.refresh()
+        return
+      }
 
       const callbackUrl = searchParams.get('callbackUrl')
       if (callbackUrl) {
@@ -51,7 +68,10 @@ export function ChoosePasswordForm() {
         return
       }
 
-      const roles = updatedSession?.user?.roles || []
+      const refreshedSession = await fetch('/api/auth/session', { cache: 'no-store' })
+        .then((res) => (res.ok ? res.json() : null))
+        .catch(() => null)
+      const roles = refreshedSession?.user?.roles || []
       const isOrganizerOrAdmin =
         roles.includes('ORGANIZER') || roles.includes('SUPER_ADMIN')
 

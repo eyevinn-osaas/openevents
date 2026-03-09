@@ -13,6 +13,10 @@ export default async function CreateEventPage() {
     redirect('/login')
   }
 
+  if (user.mustChangePassword) {
+    redirect('/choose-password?callbackUrl=/create-event')
+  }
+
   if (!hasRole(user.roles, ['ORGANIZER', 'SUPER_ADMIN'])) {
     return (
       <div className="mx-auto max-w-3xl px-4 py-12">
