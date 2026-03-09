@@ -114,14 +114,6 @@ export function Header() {
                     Dashboard
                   </Link>
                 )}
-                {isSuperAdmin && (
-                  <Link
-                    href="/admin"
-                    className={pathname.startsWith('/admin') ? 'text-[#5C8BD9] font-semibold' : 'text-gray-600 hover:text-gray-900 font-medium'}
-                  >
-                    Admin
-                  </Link>
-                )}
                 <div ref={accountMenuRef} className="relative">
                   <button
                     type="button"
@@ -244,15 +236,6 @@ export function Header() {
                     onClick={() => setMobileMenuOpen(false)}
                   >
                     Dashboard
-                  </Link>
-                )}
-                {isSuperAdmin && (
-                  <Link
-                    href="/admin"
-                    className={`block px-3 py-2 rounded-md ${pathname.startsWith('/admin') ? 'text-[#5C8BD9] font-semibold' : 'text-gray-600 hover:bg-gray-50 font-medium'}`}
-                    onClick={() => setMobileMenuOpen(false)}
-                  >
-                    Admin
                   </Link>
                 )}
                 <Link
