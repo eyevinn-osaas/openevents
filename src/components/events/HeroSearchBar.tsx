@@ -8,6 +8,7 @@ type Category = { id: string; name: string; slug: string }
 type HeroSearchBarProps = {
   categories: Category[]
   showCategoryPills?: boolean
+  showCategoryDropdown?: boolean
   initial?: {
     search?: string
     dateFrom?: string
@@ -17,7 +18,12 @@ type HeroSearchBarProps = {
   }
 }
 
-export function HeroSearchBar({ categories, showCategoryPills = true, initial }: HeroSearchBarProps) {
+export function HeroSearchBar({
+  categories,
+  showCategoryPills = true,
+  showCategoryDropdown = true,
+  initial,
+}: HeroSearchBarProps) {
   const router = useRouter()
 
   const [search, setSearch] = useState(initial?.search ?? '')
@@ -31,7 +37,7 @@ export function HeroSearchBar({ categories, showCategoryPills = true, initial }:
   const [selectedCategory, setSelectedCategory] = useState<Category | null>(
     initial?.category ? (categories.find(c => c.slug === initial.category) ?? null) : null
   )
-  const [openPanel, setOpenPanel] = useState<'date' | 'location' | null>(null)
+  const [openPanel, setOpenPanel] = useState<'date' | 'location' | 'category' | null>(null)
   const [calendarDate, setCalendarDate] = useState(
     initial?.dateFrom ? new Date(initial.dateFrom) : new Date()
   )
@@ -48,7 +54,7 @@ export function HeroSearchBar({ categories, showCategoryPills = true, initial }:
     return () => document.removeEventListener('mousedown', handler)
   }, [])
 
-  const togglePanel = (panel: 'date' | 'location') => {
+  const togglePanel = (panel: 'date' | 'location' | 'category') => {
     setOpenPanel(prev => (prev === panel ? null : panel))
   }
 
@@ -286,6 +292,51 @@ export function HeroSearchBar({ categories, showCategoryPills = true, initial }:
           )}
         </div>
 
+        {/* ── Category ─────────────────────────────────────────────────────── */}
+        {showCategoryDropdown && (
+          <div className="relative flex items-center h-full">
+            <div className="h-6 w-px bg-[#d1d5dc] shrink-0" />
+            <button
+              onClick={() => togglePanel('category')}
+              className="flex items-center gap-1.5 px-5 py-2 text-[16px] text-black rounded-full hover:bg-black/[0.06] transition-colors whitespace-nowrap font-['Outfit',sans-serif]"
+            >
+              {selectedCategory?.name || 'Category'}
+              <ChevronDown />
+            </button>
+
+            {openPanel === 'category' && (
+              <div className="absolute top-[calc(100%+12px)] right-0 z-50 bg-white rounded-2xl shadow-2xl py-2 w-[220px] max-h-72 overflow-y-auto">
+                <button
+                  onClick={() => { setSelectedCategory(null); setOpenPanel(null) }}
+                  className={`w-full text-left px-4 py-3 text-[14px] transition-colors hover:bg-gray-50
+                    ${!selectedCategory ? 'font-semibold text-[#5c8bd9]' : 'text-gray-700'}`}
+                >
+                  All Categories
+                </button>
+                {categories.map(cat => (
+                  <button
+                    key={cat.id}
+                    onClick={() => {
+                      setSelectedCategory(cat)
+                      setOpenPanel(null)
+                      const params = new URLSearchParams()
+                      if (search.trim()) params.set('search', search.trim())
+                      if (dateFrom) params.set('startDate', dateFrom.toISOString().split('T')[0])
+                      if (dateTo) params.set('endDate', dateTo.toISOString().split('T')[0])
+                      if (location.trim()) params.set('location', location.trim())
+                      params.set('category', cat.slug)
+                      router.push(`/events?${params.toString()}`)
+                    }}
+                    className={`w-full text-left px-4 py-3 text-[14px] transition-colors hover:bg-gray-50
+                      ${selectedCategory?.id === cat.id ? 'font-semibold text-[#5c8bd9]' : 'text-gray-700'}`}
+                  >
+                    {cat.name}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
         {/* ── Search icon ───────────────────────────────────────────────────── */}
         <button
           onClick={handleSearch}
