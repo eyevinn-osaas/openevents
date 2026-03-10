@@ -498,6 +498,7 @@ model Order {
   paidAt          DateTime?
   cancelledAt     DateTime?
   refundedAt      DateTime?
+  invoiceSentAt   DateTime?    // When invoice was sent (for invoice orders)
 
   // Refund info
   refundStatus    RefundStatus?

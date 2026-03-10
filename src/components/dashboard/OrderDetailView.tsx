@@ -16,6 +16,7 @@ type OrderDetailViewProps = {
     discountAmount: number
     currency: string
     createdAt: Date
+    invoiceSentAt?: Date | null
     items: Array<{
       id: string
       quantity: number
@@ -29,10 +30,12 @@ type OrderDetailViewProps = {
   refundAction: (formData: FormData) => Promise<void>
   emailAction: (formData: FormData) => Promise<void>
   markPaidAction?: (formData: FormData) => Promise<void>
+  markInvoiceSentAction?: (formData: FormData) => Promise<void>
 }
 
-export function OrderDetailView({ order, refundAction, emailAction, markPaidAction }: OrderDetailViewProps) {
+export function OrderDetailView({ order, refundAction, emailAction, markPaidAction, markInvoiceSentAction }: OrderDetailViewProps) {
   const isPendingInvoice = order.status === 'PENDING_INVOICE'
+  const showMarkInvoiceSent = isPendingInvoice && !order.invoiceSentAt && markInvoiceSentAction
   return (
     <div className="space-y-6">
       <section className="rounded-xl border border-gray-200 bg-white p-6">
@@ -40,6 +43,15 @@ export function OrderDetailView({ order, refundAction, emailAction, markPaidActi
         <p className="mt-1 text-sm text-gray-600">
           {order.status} · {formatPaymentMethodLabel(order.paymentMethod, 'No payment method')} · {formatDateTime(order.createdAt)}
         </p>
+        {isPendingInvoice && (
+          <p className="mt-2 text-sm">
+            {order.invoiceSentAt ? (
+              <span className="text-green-600">Invoice sent on {formatDateTime(order.invoiceSentAt)}</span>
+            ) : (
+              <span className="text-amber-600">Invoice not yet sent</span>
+            )}
+          </p>
+        )}
 
         <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
           <div>
@@ -71,6 +83,14 @@ export function OrderDetailView({ order, refundAction, emailAction, markPaidActi
       <section className="rounded-xl border border-gray-200 bg-white p-6">
         <h2 className="text-lg font-semibold text-gray-900">Actions</h2>
         <div className="mt-4 flex flex-wrap gap-3">
+          {showMarkInvoiceSent && (
+            <form action={markInvoiceSentAction}>
+              <input type="hidden" name="orderId" value={order.id} />
+              <Button type="submit" className="bg-blue-600 hover:bg-blue-700">
+                Mark Invoice Sent
+              </Button>
+            </form>
+          )}
           {isPendingInvoice && markPaidAction && (
             <form action={markPaidAction}>
               <input type="hidden" name="orderId" value={order.id} />

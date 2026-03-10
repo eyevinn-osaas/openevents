@@ -27,14 +27,31 @@ export default async function EventOrderDetailPage({ params }: PageProps) {
       eventId: id,
       event: eventWhere,
     },
-    include: {
+    select: {
+      id: true,
+      orderNumber: true,
+      status: true,
+      paymentMethod: true,
+      buyerFirstName: true,
+      buyerLastName: true,
+      buyerEmail: true,
+      subtotal: true,
+      discountAmount: true,
+      totalAmount: true,
+      currency: true,
+      createdAt: true,
+      invoiceSentAt: true,
       event: {
         select: {
           title: true,
         },
       },
       items: {
-        include: {
+        select: {
+          id: true,
+          quantity: true,
+          unitPrice: true,
+          totalPrice: true,
           ticketType: {
             select: {
               name: true,
@@ -331,6 +348,57 @@ export default async function EventOrderDetailPage({ params }: PageProps) {
     revalidatePath(`/dashboard/events/${id}/orders`)
   }
 
+  async function markInvoiceSentAction(formData: FormData) {
+    'use server'
+
+    const { event: eventCheck, isSuperAdmin, organizerProfile } = await canAccessEvent(id)
+    if (!eventCheck) {
+      throw new Error('Event not found')
+    }
+
+    const submittedOrderId = String(formData.get('orderId') || '')
+
+    const orderEventWhere: Prisma.EventWhereInput = isSuperAdmin
+      ? { id, deletedAt: null }
+      : { id, organizerId: organizerProfile!.id, deletedAt: null }
+
+    const targetOrder = await prisma.order.findFirst({
+      where: {
+        id: submittedOrderId,
+        eventId: id,
+        event: orderEventWhere,
+      },
+      select: {
+        id: true,
+        status: true,
+        invoiceSentAt: true,
+      },
+    })
+
+    if (!targetOrder) {
+      throw new Error('Order not found')
+    }
+
+    if (targetOrder.status !== 'PENDING_INVOICE') {
+      throw new Error(`Only pending invoice orders can have their invoice marked as sent. Current status: ${targetOrder.status}`)
+    }
+
+    if (targetOrder.invoiceSentAt) {
+      // Already marked as sent, do nothing
+      return
+    }
+
+    await prisma.order.update({
+      where: { id: targetOrder.id },
+      data: {
+        invoiceSentAt: new Date(),
+      },
+    })
+
+    revalidatePath(`/dashboard/events/${id}/orders/${submittedOrderId}`)
+    revalidatePath(`/dashboard/events/${id}/orders`)
+  }
+
   return (
     <div className="space-y-6">
       <nav className="flex items-center gap-2 text-sm text-gray-500">
@@ -351,6 +419,7 @@ export default async function EventOrderDetailPage({ params }: PageProps) {
         subtotal: Number(order.subtotal.toString()),
         discountAmount: Number(order.discountAmount.toString()),
         totalAmount: Number(order.totalAmount.toString()),
+        invoiceSentAt: order.invoiceSentAt,
         items: order.items.map((item) => ({
           ...item,
           unitPrice: Number(item.unitPrice.toString()),
@@ -360,6 +429,7 @@ export default async function EventOrderDetailPage({ params }: PageProps) {
       refundAction={refundAction}
       emailAction={emailAction}
       markPaidAction={markPaidAction}
+      markInvoiceSentAction={markInvoiceSentAction}
     />
     </div>
   )
