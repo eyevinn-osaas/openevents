@@ -87,14 +87,15 @@ OpenEvents is an open-source event management and ticketing platform built with 
 - Works well with Valkey for token blacklisting if needed
 - Simpler OSC deployment
 
-### 6. Stub Payment Implementation
+### 6. Stripe Payment Integration
 
-**Decision:** Mock PayPal integration with real order flow.
+**Decision:** Stripe Checkout for online payments with invoice fallback.
 
 **Rationale:**
-- Complete checkout UX for testing
-- Easy to swap in real PayPal when ready
-- Invoice and free ticket flows work immediately
+- Industry-standard payment processing
+- Hosted checkout page reduces PCI compliance scope
+- Built-in support for refunds and webhooks
+- Invoice option for B2B customers who prefer manual payment
 
 ### 7. PDF Ticket Generation
 
@@ -295,21 +296,11 @@ openevents/
 
 See `CONTRIBUTING.md` for detailed deployment instructions.
 
-## Future Enhancements
+## Potential Future Enhancements
 
-### Phase 2 (In Progress)
-- PayPal live integration
-- Automated refund processing
-- Webhook handling for payment events
-- Organizer dashboard statistics
-- Admin panel for platform management
-
-### Phase 3
 - Multi-currency support
-- Mobile-responsive improvements
-- Email templates customization
-
-### Phase 4
-- Analytics dashboard
-- Attendee check-in app
-- Calendar integrations
+- Calendar integrations (Google Calendar, iCal export)
+- Mobile app for attendee check-in
+- Custom email template editor
+- Multi-track scheduling
+- Waitlist functionality

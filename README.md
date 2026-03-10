@@ -1,17 +1,61 @@
 # OpenEvents
 
-An open-source event management and ticketing platform, similar to Eventbrite. Built with Next.js, TypeScript, and deployed on Eyevinn Open Source Cloud (OSC).
+An open-source event management and ticketing platform built for [Streaming Tech Sweden 2026](https://events.apps.osaas.io). Built with Next.js, TypeScript, and deployed on [Eyevinn Open Source Cloud (OSC)](https://www.osaas.io/).
+
+**Live site:** [events.apps.osaas.io](https://events.apps.osaas.io)
 
 ## Features
 
-- **Event Management**: Create, edit, and publish events with rich details
-- **Ticketing**: Multiple ticket types, capacity management, and discount codes
-- **User Roles**: Attendees, Organizers, and Super Admins
-- **Authentication**: Email/password and OAuth (Google, GitHub)
-- **Media Storage**: Upload event images and videos
-- **Order Processing**: Checkout flow with Stripe integration
-- **PDF Tickets**: Downloadable/printable ticket PDFs with QR codes
-- **Organizer Dashboard**: Sales statistics, order management, and analytics
+### Event Management
+- Create, edit, and publish events with rich details
+- Cover images and media uploads
+- Event visibility controls (public/private)
+- Event status workflow (draft, published, cancelled, completed)
+
+### Ticketing & Sales
+- Multiple ticket types with individual pricing and capacity
+- Discount codes (percentage, fixed amount, free tickets)
+- Group discounts for bulk purchases
+- Invoice payment option for B2B customers
+- Ticket reservation system during checkout
+- Real-time availability tracking
+
+### Speakers & Agenda
+- Speaker profiles with photos, bios, and social links
+- Drag-and-drop speaker ordering
+- Agenda/schedule builder with time slots
+- Speaker assignment to agenda items
+
+### Payments
+- Stripe integration for online payments
+- Invoice billing for corporate customers
+- Automated refund processing
+- VAT handling (25% included)
+
+### Attendee Management
+- PDF tickets with QR codes
+- QR code scanner for event check-in
+- Attendee export to CSV/Excel
+- Per-ticket attendee information
+
+### Organizer Dashboard
+- Sales statistics and revenue tracking
+- 30-day sales trend charts
+- Order management with filtering and search
+- Bulk order actions and CSV export
+- Ticket type and discount code management
+
+### Admin Panel
+- Platform-wide statistics
+- User management with role assignment
+- Create accounts with one-time passwords
+- Event overview across all organizers
+
+### Authentication
+- Email/password with verification
+- OAuth (Google, GitHub)
+- Role-based access (Attendee, Organizer, Super Admin)
+- Account deletion with grace period
 
 ## Tech Stack
 
@@ -21,6 +65,7 @@ An open-source event management and ticketing platform, similar to Eventbrite. B
 - **Cache**: Valkey/Redis (on OSC)
 - **Storage**: MinIO/S3 (on OSC)
 - **Authentication**: NextAuth.js
+- **Payments**: Stripe
 - **Deployment**: Eyevinn Open Source Cloud
 
 ## Quick Start
@@ -35,7 +80,7 @@ An open-source event management and ticketing platform, similar to Eventbrite. B
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/JuiceAndTheJoe/openevents.git
+   git clone https://github.com/Eyevinn/openevents.git
    cd openevents
    ```
 
@@ -79,19 +124,72 @@ An open-source event management and ticketing platform, similar to Eventbrite. B
 
 ```
 openevents/
-├── prisma/               # Database schema and migrations
+├── prisma/                    # Database schema and migrations
 ├── src/
-│   ├── app/              # Next.js App Router
-│   │   ├── (auth)/       # Authentication pages
-│   │   ├── (public)/     # Public pages (events)
-│   │   ├── (dashboard)/  # User/Organizer dashboard
-│   │   ├── (admin)/      # Super Admin panel
-│   │   └── api/          # API routes
-│   ├── components/       # React components
-│   ├── lib/              # Utilities and services
-│   └── types/            # TypeScript types
-├── docs/                 # Documentation
-└── public/               # Static assets
+│   ├── app/                   # Next.js App Router
+│   │   ├── (auth)/            # Authentication pages
+│   │   │   ├── login/
+│   │   │   ├── register/
+│   │   │   ├── verify-email/
+│   │   │   ├── forgot-password/
+│   │   │   └── reset-password/
+│   │   ├── (public)/          # Public pages
+│   │   │   ├── events/        # Event listing and details
+│   │   │   │   └── [slug]/
+│   │   │   │       └── checkout/
+│   │   │   └── orders/        # Order confirmation
+│   │   ├── (dashboard)/       # Organizer & admin dashboard
+│   │   │   └── dashboard/
+│   │   │       ├── events/    # Event management
+│   │   │       │   ├── new/
+│   │   │       │   └── [id]/
+│   │   │       │       ├── edit/
+│   │   │       │       ├── orders/
+│   │   │       │       ├── tickets/
+│   │   │       │       ├── discounts/
+│   │   │       │       └── scan/
+│   │   │       ├── admin/     # Super admin panel
+│   │   │       │   └── users/
+│   │   │       ├── profile/
+│   │   │       ├── settings/
+│   │   │       └── scan/      # Quick ticket scanner
+│   │   └── api/               # API routes
+│   │       ├── auth/
+│   │       ├── events/
+│   │       │   └── [id]/
+│   │       │       ├── speakers/
+│   │       │       ├── agenda/
+│   │       │       ├── ticket-types/
+│   │       │       └── discount-codes/
+│   │       ├── orders/
+│   │       │   └── [id]/
+│   │       │       ├── pay/
+│   │       │       ├── capture/
+│   │       │       ├── refund/
+│   │       │       └── mark-paid/
+│   │       ├── dashboard/
+│   │       ├── admin/
+│   │       ├── webhooks/
+│   │       └── upload/
+│   ├── components/            # React components
+│   │   ├── ui/                # Base UI components
+│   │   ├── auth/              # Authentication
+│   │   ├── events/            # Event display & editing
+│   │   ├── tickets/           # Checkout & tickets
+│   │   ├── dashboard/         # Dashboard widgets
+│   │   ├── admin/             # Admin components
+│   │   └── layout/            # Layout components
+│   ├── lib/                   # Shared libraries
+│   │   ├── auth/              # Authentication utilities
+│   │   ├── db/                # Prisma client
+│   │   ├── email/             # Email service
+│   │   ├── storage/           # S3/MinIO utilities
+│   │   ├── payments/          # Stripe integration
+│   │   ├── analytics/         # Dashboard analytics
+│   │   └── validations/       # Zod schemas
+│   └── types/                 # TypeScript types
+├── docs/                      # Documentation
+└── public/                    # Static assets
 ```
 
 ## Development
@@ -110,14 +208,8 @@ npm run db:reset       # Reset database
 ### Running Tests
 
 ```bash
-# Run all tests
-npm test
-
-# Run tests in watch mode
-npm run test:watch
-
-# Run a specific test file
-npm test -- src/__tests__/lib/auth/config.test.ts
+npm test               # Run all tests
+npm run test:watch     # Run tests in watch mode
 ```
 
 ### Linting
@@ -130,10 +222,13 @@ npm run lint
 
 - [Architecture](./ARCHITECTURE.md) - System design and infrastructure
 - [Contributing](./CONTRIBUTING.md) - How to contribute
+- [Setup Guide](./docs/SETUP.md) - Detailed setup instructions
+- [Email Setup](./docs/SETUP_EMAIL.md) - Email configuration
+- [Storage Setup](./docs/SETUP_STORAGE.md) - MinIO/S3 configuration
 
 ## Deployment
 
-This project is designed to be deployed on Eyevinn Open Source Cloud (OSC). See [ARCHITECTURE.md](./ARCHITECTURE.md) for OSC service configuration.
+This project is deployed on [Eyevinn Open Source Cloud (OSC)](https://www.osaas.io/). See [ARCHITECTURE.md](./ARCHITECTURE.md) for OSC service configuration.
 
 ## Contributing
 
