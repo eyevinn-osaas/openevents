@@ -938,13 +938,12 @@ export function EventForm({
   const [openDateTimePanel, setOpenDateTimePanel] = useState<
     "startDate" | "endDate" | "startTime" | "endTime" | null
   >(null);
+  // Use stable initial value to avoid hydration mismatch, then update on client
   const [calendarNav, setCalendarNav] = useState<{
     year: number;
     month: number;
-  }>(() => {
-    const now = new Date();
-    return { year: now.getFullYear(), month: now.getMonth() };
-  });
+  }>({ year: 2024, month: 0 });
+  const calendarNavInitializedRef = useRef(false);
   const dateTimePanelRef = useRef<HTMLDivElement | null>(null);
   const [bannerPreviewSrc, setBannerPreviewSrc] = useState<string | null>(null);
   const [bottomPreviewSrc, setBottomPreviewSrc] = useState<string | null>(null);
@@ -1027,6 +1026,8 @@ export function EventForm({
   const persistedSnapshotRef = useRef(initialPersistedSnapshot);
   const initialSnapshotRef = useRef(buildSnapshot(initialFormState));
   const autosaveInFlightRef = useRef(false);
+  // Counter for generating stable speaker draft keys (avoids hydration mismatch)
+  const speakerKeyCounterRef = useRef(0);
   const historyGuardActiveRef = useRef(false);
   const bypassNavigationGuardRef = useRef(false);
   const pendingNavigationRef = useRef<(() => void) | null>(null);
@@ -1324,6 +1325,22 @@ export function EventForm({
     );
   };
 
+  const isCalendarDayPast = (year: number, month: number, day: number) => {
+    const now = new Date();
+    const todayMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const cellDate = new Date(year, month, day);
+    return cellDate < todayMidnight;
+  };
+
+  const isHourPast = (hour: string) => {
+    const datePart = getDatePart(form.startDate);
+    if (!datePart) return false;
+    const now = new Date();
+    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+    if (datePart !== today) return false;
+    return parseInt(hour, 10) < now.getHours();
+  };
+
   const formatCalendarHeader = (year: number, month: number) =>
     `${new Intl.DateTimeFormat("en", { month: "long" }).format(new Date(year, month))} ${year}`;
 
@@ -1616,6 +1633,14 @@ export function EventForm({
       initialSnapshotRef.current = buildSnapshot(updatedForm);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Initialize calendar navigation to current date on client (avoids hydration mismatch)
+  useEffect(() => {
+    if (calendarNavInitializedRef.current) return;
+    calendarNavInitializedRef.current = true;
+    const now = new Date();
+    setCalendarNav({ year: now.getFullYear(), month: now.getMonth() });
   }, []);
 
   useEffect(() => {
@@ -2884,10 +2909,11 @@ export function EventForm({
   }
 
   function addSpeakerDraft() {
+    const keyId = speakerKeyCounterRef.current++;
     setSpeakerDrafts((current) => [
       ...current,
       {
-        key: `speaker-${Date.now()}-${Math.random()}`,
+        key: `speaker-new-${keyId}`,
         name: "",
         title: "",
         organization: "",
@@ -3122,9 +3148,10 @@ export function EventForm({
 
       const payload = buildEventPayload(form, speakerDrafts, startUtc, endUtc);
 
-      const endpoint =
-        mode === "create" ? "/api/events" : `/api/events/${form.id}`;
-      const method = mode === "create" ? "POST" : "PATCH";
+      // Use existing form.id if available (event was already created in this session)
+      const isNewEvent = mode === "create" && !form.id;
+      const endpoint = isNewEvent ? "/api/events" : `/api/events/${form.id}`;
+      const method = isNewEvent ? "POST" : "PATCH";
 
       const eventRes = await fetch(endpoint, {
         method,
@@ -3157,7 +3184,7 @@ export function EventForm({
         savedGroupDiscounts = await syncGroupDiscounts(eventId, savedTicketTypes ?? []);
       }
 
-      if (mode === "edit" && eventId) {
+      if (eventId) {
         const savedSnapshot = buildDraftStateSnapshot(
           { ...form, id: eventId, ticketTypes: savedTicketTypes },
           speakerDrafts,
@@ -3166,6 +3193,11 @@ export function EventForm({
         );
         persistedSnapshotRef.current = savedSnapshot;
         setPersistedSnapshot(savedSnapshot);
+
+        // Update form.id so subsequent saves use PATCH instead of creating a new event
+        if (isNewEvent) {
+          setForm((current) => ({ ...current, id: eventId, slug: eventSlug }));
+        }
       }
 
       if (action === "publish" && eventId) {
@@ -3907,6 +3939,7 @@ export function EventForm({
                         {day ? (
                           <button
                             type="button"
+                            disabled={isCalendarDayPast(calendarNav.year, calendarNav.month, day)}
                             onClick={() => {
                               updateDatePart(
                                 "startDate",
@@ -3915,7 +3948,9 @@ export function EventForm({
                               setOpenDateTimePanel(null);
                             }}
                             className={`flex h-10 w-10 items-center justify-center rounded-full text-[14px] font-medium transition-colors ${
-                              isDatePickerDaySelected(
+                              isCalendarDayPast(calendarNav.year, calendarNav.month, day)
+                                ? "cursor-not-allowed text-gray-300"
+                                : isDatePickerDaySelected(
                                 "startDate",
                                 calendarNav.year,
                                 calendarNav.month,
@@ -4081,11 +4116,14 @@ export function EventForm({
                       <button
                         key={h}
                         type="button"
+                        disabled={isHourPast(h)}
                         onClick={() => updateHourPart("startDate", h)}
-                        className={`w-full px-3 py-2 text-center text-[14px] transition-colors hover:bg-gray-50 ${
-                          getTimePart(form.startDate).split(":")[0] === h
-                            ? "font-semibold text-blue-600"
-                            : "text-gray-700"
+                        className={`w-full px-3 py-2 text-center text-[14px] transition-colors ${
+                          isHourPast(h)
+                            ? "cursor-not-allowed text-gray-300"
+                            : getTimePart(form.startDate).split(":")[0] === h
+                              ? "font-semibold text-blue-600"
+                              : "text-gray-700 hover:bg-gray-50"
                         }`}
                       >
                         {h}
