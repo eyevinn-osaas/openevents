@@ -4,6 +4,8 @@ import { requireOrganizerProfile, buildEventWhereClause } from '@/lib/dashboard/
 import { EventStatusBadge } from '@/components/dashboard/EventStatusBadge'
 import { formatDateTime } from '@/lib/utils'
 
+export const dynamic = 'force-dynamic'
+
 export default async function DashboardScanPage() {
   await requireOrganizerProfile()
 

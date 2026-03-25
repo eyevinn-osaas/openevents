@@ -3,6 +3,8 @@ import { prisma } from '@/lib/db'
 import { requireOrganizerProfile, buildEventWhereClause } from '@/lib/dashboard/organizer'
 import { TicketScanner } from '@/components/tickets/TicketScanner'
 
+export const dynamic = 'force-dynamic'
+
 type PageProps = {
   params: Promise<{ id: string }>
 }

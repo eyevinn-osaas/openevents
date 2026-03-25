@@ -7,6 +7,8 @@ import { requireOrganizerProfile, buildEventWhereClause, canAccessEvent } from '
 import { OrderFilters } from '@/components/dashboard/OrderFilters'
 import { OrdersTable } from '@/components/dashboard/OrdersTable'
 
+export const dynamic = 'force-dynamic'
+
 type PageProps = {
   params: Promise<{ id: string }>
   searchParams: Promise<Record<string, string | string[] | undefined>>

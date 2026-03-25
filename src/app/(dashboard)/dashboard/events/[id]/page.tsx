@@ -5,6 +5,8 @@ import { EventDashboard } from '@/components/dashboard/EventDashboard'
 import { RecentOrders } from '@/components/dashboard/RecentOrders'
 import { getEventAnalytics } from '@/lib/analytics/event-analytics'
 
+export const dynamic = 'force-dynamic'
+
 type PageProps = {
   params: Promise<{ id: string }>
 }

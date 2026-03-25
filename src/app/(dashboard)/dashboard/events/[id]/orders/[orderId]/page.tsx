@@ -9,6 +9,8 @@ import { OrderDetailView } from '@/components/dashboard/OrderDetailView'
 import { generateTicketCreateInput, lockTicketTypes } from '@/lib/orders'
 import { formatDateTime } from '@/lib/utils'
 
+export const dynamic = 'force-dynamic'
+
 type PageProps = {
   params: Promise<{ id: string; orderId: string }>
 }
