@@ -8,7 +8,7 @@ import { useSession } from 'next-auth/react'
 import { cn } from '@/lib/utils'
 
 type NavItem = {
-  id: 'scan' | 'overview' | 'events' | 'adminOverview' | 'adminUsers' | 'adminLegal'
+  id: 'scan' | 'overview' | 'events' | 'adminUsers' | 'adminLegal' | 'adminCustomization'
   href: string
   label: string
   badge?: 'attention'
@@ -22,12 +22,12 @@ function isActive(pathname: string, item: NavItem): boolean {
       return pathname === '/dashboard'
     case 'events':
       return pathname.startsWith('/dashboard/events') && !pathname.endsWith('/scan')
-    case 'adminOverview':
-      return pathname === '/dashboard/admin'
     case 'adminUsers':
       return pathname.startsWith('/dashboard/admin/users')
     case 'adminLegal':
       return pathname.startsWith('/dashboard/admin/legal')
+    case 'adminCustomization':
+      return pathname.startsWith('/dashboard/admin/customization')
     default:
       return false
   }
@@ -37,7 +37,9 @@ export function OrganizerSidebarNav() {
   const { data: session } = useSession()
   const pathname = usePathname()
   const isSuperAdmin = session?.user?.roles?.includes('SUPER_ADMIN')
+  const mustChangePassword = session?.user?.mustChangePassword ?? false
   const [legalNeedsAttention, setLegalNeedsAttention] = useState(false)
+  const [customizationNeedsAttention, setCustomizationNeedsAttention] = useState(false)
 
   const checkLegalStatus = useCallback(() => {
     if (!isSuperAdmin) return
@@ -53,27 +55,45 @@ export function OrganizerSidebarNav() {
       .catch(() => {})
   }, [isSuperAdmin])
 
+  const checkCustomizationStatus = useCallback(() => {
+    if (!isSuperAdmin) return
+
+    fetch('/api/admin/homepage')
+      .then((res) => res.ok ? res.json() : null)
+      .then((data) => {
+        if (!data?.data) return
+        const { heroText, heroImage } = data.data
+        const isDefault = heroText === 'Events made for business' && !heroImage
+        setCustomizationNeedsAttention(isDefault)
+      })
+      .catch(() => {})
+  }, [isSuperAdmin])
+
   useEffect(() => {
     checkLegalStatus()
+    checkCustomizationStatus()
 
     window.addEventListener('legal-content-updated', checkLegalStatus)
-    return () => window.removeEventListener('legal-content-updated', checkLegalStatus)
-  }, [checkLegalStatus])
+    window.addEventListener('customization-updated', checkCustomizationStatus)
+    return () => {
+      window.removeEventListener('legal-content-updated', checkLegalStatus)
+      window.removeEventListener('customization-updated', checkCustomizationStatus)
+    }
+  }, [checkLegalStatus, checkCustomizationStatus])
 
   const navItems: NavItem[] = [
     { id: 'scan', href: '/dashboard/scan', label: 'Scan Tickets' },
     { id: 'overview', href: '/dashboard', label: 'Dashboard' },
-    // Hide "Manage Events" for Super Admins - they use Event Management instead
-    ...(isSuperAdmin ? [] : [{ id: 'events' as const, href: '/dashboard/events', label: 'Manage Events' }]),
+    { id: 'events', href: '/dashboard/events', label: 'Manage Events' },
   ]
   const adminNavItems: NavItem[] = [
-    { id: 'adminOverview', href: '/dashboard/admin', label: 'Event Management' },
     { id: 'adminUsers', href: '/dashboard/admin/users', label: 'User Management' },
     { id: 'adminLegal', href: '/dashboard/admin/legal', label: 'Legal & Contact', badge: legalNeedsAttention ? 'attention' : undefined },
+    { id: 'adminCustomization', href: '/dashboard/admin/customization', label: 'Platform Customization', badge: customizationNeedsAttention ? 'attention' : undefined },
   ]
 
   const profileSectionActive = pathname === '/dashboard/profile' || pathname.startsWith('/dashboard/settings')
-  const adminSectionActive = pathname === '/dashboard/admin' || pathname.startsWith('/dashboard/admin/users') || pathname.startsWith('/dashboard/admin/legal')
+  const adminSectionActive = pathname === '/dashboard/admin' || pathname.startsWith('/dashboard/admin/users') || pathname.startsWith('/dashboard/admin/legal') || pathname.startsWith('/dashboard/admin/customization')
   const [adminMenuExpanded, setAdminMenuExpanded] = useState(false)
   const [adminMenuOverride, setAdminMenuOverride] = useState<{ path: string; open: boolean } | null>(null)
   const autoAdminOpen = adminMenuExpanded || adminSectionActive
@@ -109,12 +129,15 @@ export function OrganizerSidebarNav() {
             <Link
               href="/dashboard/admin"
               className={cn(
-                'flex-1 rounded-md px-3 py-2 font-medium transition',
+                'flex-1 rounded-md px-3 py-2 font-medium transition flex items-center justify-between',
                 pathname === '/dashboard/admin' ? 'bg-[#5C8BD9] text-white' : 'text-gray-700 hover:bg-gray-50'
               )}
               aria-current={pathname === '/dashboard/admin' ? 'page' : undefined}
             >
               Admin
+              {!adminOpen && (legalNeedsAttention || customizationNeedsAttention) && (
+                <span className="h-2 w-2 rounded-full bg-amber-500" aria-label="Items need attention" />
+              )}
             </Link>
             <button
               type="button"
@@ -150,10 +173,7 @@ export function OrganizerSidebarNav() {
                     {item.badge === 'attention' && (
                       <>
                         <span
-                          className={cn(
-                            'h-2 w-2 rounded-full',
-                            active ? 'bg-white' : 'bg-amber-500'
-                          )}
+                          className="h-2 w-2 rounded-full bg-amber-500"
                           aria-label="Needs attention"
                         />
                         <span className="pointer-events-none absolute left-full top-1/2 z-50 ml-2 -translate-y-1/2 whitespace-nowrap rounded bg-gray-900 px-2 py-1 text-xs text-white opacity-0 transition-opacity group-hover:opacity-100">
@@ -174,12 +194,18 @@ export function OrganizerSidebarNav() {
           <Link
             href="/dashboard/profile"
             className={cn(
-              'flex-1 rounded-md px-3 py-2 font-medium transition',
+              'flex-1 rounded-md px-3 py-2 font-medium transition flex items-center justify-between',
               pathname === '/dashboard/profile' ? 'bg-[#5C8BD9] text-white' : 'text-gray-700 hover:bg-gray-50'
             )}
             aria-current={pathname === '/dashboard/profile' ? 'page' : undefined}
           >
             Profile
+            {!profileOpen && mustChangePassword && (
+              <span className="relative flex h-2 w-2">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-amber-400 opacity-75" />
+                <span className="relative inline-flex h-2 w-2 rounded-full bg-amber-500" />
+              </span>
+            )}
           </Link>
           <button
             type="button"
@@ -211,12 +237,23 @@ export function OrganizerSidebarNav() {
             <Link
               href="/dashboard/settings/account"
               className={cn(
-                'block rounded-md px-3 py-2 font-medium transition',
+                'group relative flex items-center justify-between rounded-md px-3 py-2 font-medium transition',
                 pathname.startsWith('/dashboard/settings/account') ? 'bg-[#5C8BD9] text-white' : 'text-gray-700 hover:bg-gray-50'
               )}
               aria-current={pathname.startsWith('/dashboard/settings/account') ? 'page' : undefined}
             >
               Account Settings
+              {mustChangePassword && (
+                <>
+                  <span className="relative flex h-2 w-2">
+                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-amber-400 opacity-75" />
+                    <span className="relative inline-flex h-2 w-2 rounded-full bg-amber-500" />
+                  </span>
+                  <span className="pointer-events-none absolute left-full top-1/2 z-50 ml-2 -translate-y-1/2 whitespace-nowrap rounded bg-gray-900 px-2 py-1 text-xs text-white opacity-0 transition-opacity group-hover:opacity-100">
+                    Please change your default password
+                  </span>
+                </>
+              )}
             </Link>
           </div>
         ) : null}
