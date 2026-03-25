@@ -40,8 +40,6 @@ export default async function DashboardAdminUsersPage({
 
   if (roleFilter === 'ORGANIZER') {
     where.roles = { some: { role: 'ORGANIZER' } }
-  } else if (roleFilter === 'ATTENDEE_ONLY') {
-    where.roles = { none: { role: 'ORGANIZER' } }
   }
 
   if (searchQuery) {
@@ -125,16 +123,6 @@ export default async function DashboardAdminUsersPage({
               }`}
             >
               Organizers
-            </Link>
-            <Link
-              href={buildUrl({ role: 'ATTENDEE_ONLY', page: '1' })}
-              className={`rounded-lg px-3 py-1.5 text-sm font-medium transition ${
-                roleFilter === 'ATTENDEE_ONLY'
-                  ? 'bg-[#5C8BD9] text-white'
-                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-              }`}
-            >
-              Regular Users
             </Link>
           </div>
         </div>

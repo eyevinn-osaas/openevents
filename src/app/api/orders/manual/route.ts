@@ -120,7 +120,6 @@ export async function POST(request: NextRequest) {
         organizer: {
           select: {
             id: true,
-            userId: true,
             user: {
               select: {
                 email: true,
@@ -135,10 +134,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Event not found' }, { status: 404 })
     }
 
-    const isSuperAdmin = user.roles.includes('SUPER_ADMIN')
-    const isOrganizer = event.organizer.userId === user.id
-
-    if (!isOrganizer && !isSuperAdmin) {
+    const hasOrganizerRole = user.roles.includes('ORGANIZER') || user.roles.includes('SUPER_ADMIN')
+    if (!hasOrganizerRole) {
       return NextResponse.json(
         { error: 'Only event organizers can create manual orders' },
         { status: 403 }
@@ -225,17 +222,22 @@ export async function POST(request: NextRequest) {
 
               // Calculate discountable subtotal
               const appliesToAll = discountApplicableTicketTypeIds.length === 0
-              const discountableSubtotal = preparedOrder.items
+              const applicableItems = preparedOrder.items
                 .filter((item) => appliesToAll || discountApplicableTicketTypeIds.includes(item.ticketTypeId))
-                .reduce((sum, item) => sum + item.totalPrice, 0)
+
+              let discountableSubtotal: number
+              if (foundDiscountCode.applyToWholeOrder) {
+                discountableSubtotal = applicableItems.reduce((sum, item) => sum + item.totalPrice, 0)
+              } else {
+                const maxUnitPrice = Math.max(0, ...applicableItems.map((item) => item.unitPrice))
+                discountableSubtotal = maxUnitPrice
+              }
 
               // Check usage limits
               const remainingTicketUses = getDiscountCodeRemainingTicketUses(foundDiscountCode)
-              discountUsageUnits = getDiscountUsageUnitsFromItems(
-                preparedOrder.items.filter((item) =>
-                  appliesToAll ? true : discountApplicableTicketTypeIds.includes(item.ticketTypeId)
-                )
-              )
+              discountUsageUnits = foundDiscountCode.applyToWholeOrder
+                ? getDiscountUsageUnitsFromItems(applicableItems)
+                : 1
 
               if (remainingTicketUses === null || remainingTicketUses >= discountUsageUnits) {
                 discountCodeRecord = foundDiscountCode
