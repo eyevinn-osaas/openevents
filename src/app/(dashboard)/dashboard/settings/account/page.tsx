@@ -10,6 +10,8 @@ import {
 } from '@/lib/accountDeletion'
 import { AccountSettings } from '@/components/dashboard/AccountSettings'
 
+export const dynamic = 'force-dynamic'
+
 type PageProps = {
   searchParams: Promise<{ deletion?: string | string[] }>
 }

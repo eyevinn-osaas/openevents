@@ -7,6 +7,8 @@ import { CreateUserForm } from '@/components/admin/CreateUserForm'
 import { Role } from '@prisma/client'
 import { WorkspacePageHeader } from '@/components/layout/WorkspaceShell'
 
+export const dynamic = 'force-dynamic'
+
 type SearchParams = Promise<{
   role?: string
   search?: string

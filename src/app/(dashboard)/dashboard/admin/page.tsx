@@ -2,6 +2,8 @@ import Link from 'next/link'
 import { prisma } from '@/lib/db'
 import { WorkspacePageHeader, WorkspaceStatsGrid } from '@/components/layout/WorkspaceShell'
 
+export const dynamic = 'force-dynamic'
+
 export default async function DashboardAdminOverviewPage() {
   const [totalUsers, organizerCount, totalEvents] = await Promise.all([
     prisma.user.count({ where: { deletedAt: null } }),

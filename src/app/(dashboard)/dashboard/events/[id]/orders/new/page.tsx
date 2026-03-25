@@ -5,6 +5,8 @@ import { requireOrganizerProfile, buildEventWhereClause } from '@/lib/dashboard/
 import { ManualOrderForm } from '@/components/dashboard/ManualOrderForm'
 import { getPriceIncludingVat } from '@/lib/pricing/vat'
 
+export const dynamic = 'force-dynamic'
+
 type PageProps = {
   params: Promise<{ id: string }>
 }

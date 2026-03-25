@@ -6,6 +6,8 @@ import { requireOrganizerProfile, buildEventWhereClause, canAccessEvent } from '
 import { DiscountCodeForm } from '@/components/dashboard/DiscountCodeForm'
 import { DiscountCodeList } from '@/components/dashboard/DiscountCodeList'
 
+export const dynamic = 'force-dynamic'
+
 type PageProps = {
   params: Promise<{ id: string }>
   searchParams: Promise<Record<string, string | string[] | undefined>>

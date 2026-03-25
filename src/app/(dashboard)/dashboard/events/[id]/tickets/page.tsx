@@ -7,6 +7,8 @@ import { TicketTypeList } from '@/components/dashboard/TicketTypeList'
 import { TicketTypeForm } from '@/components/dashboard/TicketTypeForm'
 import { DEFAULT_CURRENCY, isSupportedCurrency } from '@/lib/constants/currencies'
 
+export const dynamic = 'force-dynamic'
+
 type PageProps = {
   params: Promise<{ id: string }>
   searchParams: Promise<Record<string, string | string[] | undefined>>

@@ -5,6 +5,8 @@ import { requireOrganizerProfile, buildEventWhereClause } from '@/lib/dashboard/
 import { EventsTable } from '@/components/dashboard/EventsTable'
 import { Input } from '@/components/ui/input'
 
+export const dynamic = 'force-dynamic'
+
 type PageProps = {
   searchParams: Promise<Record<string, string | string[] | undefined>>
 }

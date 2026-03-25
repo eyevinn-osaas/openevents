@@ -5,6 +5,8 @@ import { Card, CardContent } from '@/components/ui/card'
 import { formatDateTime } from '@/lib/utils'
 import { getCheckoutUnavailableNotice, getCheckoutUnavailableReason } from '@/lib/orders/checkoutAvailability'
 
+export const dynamic = 'force-dynamic'
+
 interface CheckoutPageProps {
   params: Promise<{ slug: string }>
 }

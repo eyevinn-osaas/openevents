@@ -10,6 +10,8 @@ import { SalesTrendChart } from '@/components/dashboard/SalesTrendChart'
 import { getDashboardAnalytics } from '@/lib/analytics/dashboard-analytics'
 import { WorkspacePageHeader } from '@/components/layout/WorkspaceShell'
 
+export const dynamic = 'force-dynamic'
+
 const revenueStatuses: OrderStatus[] = ['PAID']
 
 export default async function DashboardHomePage() {
