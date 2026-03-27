@@ -3,7 +3,7 @@ import { OrderStatus, Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { requireOrganizerProfile } from '@/lib/dashboard/organizer'
 
-const revenueStatuses: OrderStatus[] = ['PAID', 'PENDING_INVOICE']
+const revenueStatuses: OrderStatus[] = ['PAID']
 
 export async function GET() {
   try {
@@ -34,6 +34,7 @@ export async function GET() {
           status: {
             in: revenueStatuses,
           },
+          paymentMethod: 'PAYPAL',
         },
         _sum: {
           totalAmount: true,
@@ -49,6 +50,7 @@ export async function GET() {
           status: {
             in: revenueStatuses,
           },
+          paymentMethod: 'PAYPAL',
         },
         _sum: {
           totalAmount: true,

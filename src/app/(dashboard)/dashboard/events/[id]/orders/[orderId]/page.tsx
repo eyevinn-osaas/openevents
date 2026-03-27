@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { revalidatePath, revalidateTag } from 'next/cache'
-import { notFound } from 'next/navigation'
+import { notFound, redirect } from 'next/navigation'
 import { Prisma, PaymentMethod } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { sendOrderConfirmationEmail } from '@/lib/email'
@@ -39,6 +39,11 @@ export default async function EventOrderDetailPage({ params }: PageProps) {
       currency: true,
       createdAt: true,
       invoiceSentAt: true,
+      discountCode: {
+        select: {
+          code: true,
+        },
+      },
       event: {
         select: {
           title: true,
@@ -399,6 +404,56 @@ export default async function EventOrderDetailPage({ params }: PageProps) {
     revalidatePath(`/dashboard/events/${id}/orders`)
   }
 
+  async function deleteOrderAction(formData: FormData) {
+    'use server'
+
+    const { event: eventCheck } = await canAccessEvent(id)
+    if (!eventCheck) {
+      throw new Error('Event not found')
+    }
+
+    const submittedOrderId = String(formData.get('orderId') || '')
+
+    const targetOrder = await prisma.order.findFirst({
+      where: {
+        id: submittedOrderId,
+        eventId: id,
+        event: { id, deletedAt: null },
+      },
+      include: {
+        items: true,
+      },
+    })
+
+    if (!targetOrder) {
+      throw new Error('Order not found')
+    }
+
+    await prisma.$transaction(async (tx) => {
+      // Adjust ticket type counts
+      for (const item of targetOrder.items) {
+        if (targetOrder.status === 'PAID') {
+          await tx.ticketType.update({
+            where: { id: item.ticketTypeId },
+            data: { soldCount: { decrement: item.quantity } },
+          })
+        } else if (targetOrder.status === 'PENDING' || targetOrder.status === 'PENDING_INVOICE') {
+          await tx.ticketType.update({
+            where: { id: item.ticketTypeId },
+            data: { reservedCount: { decrement: item.quantity } },
+          })
+        }
+      }
+
+      // Cascade deletes order items and tickets
+      await tx.order.delete({ where: { id: targetOrder.id } })
+    })
+
+    revalidateTag('event-analytics', 'max')
+    revalidateTag('dashboard-analytics', 'max')
+    redirect(`/dashboard/events/${id}/orders`)
+  }
+
   return (
     <div className="space-y-6">
       <nav className="flex items-center gap-2 text-sm text-gray-500">
@@ -420,6 +475,7 @@ export default async function EventOrderDetailPage({ params }: PageProps) {
         discountAmount: Number(order.discountAmount.toString()),
         totalAmount: Number(order.totalAmount.toString()),
         invoiceSentAt: order.invoiceSentAt,
+        discountCode: order.discountCode?.code ?? null,
         items: order.items.map((item) => ({
           ...item,
           unitPrice: Number(item.unitPrice.toString()),
@@ -430,6 +486,7 @@ export default async function EventOrderDetailPage({ params }: PageProps) {
       emailAction={emailAction}
       markPaidAction={markPaidAction}
       markInvoiceSentAction={markInvoiceSentAction}
+      deleteOrderAction={deleteOrderAction}
     />
     </div>
   )

@@ -1,11 +1,12 @@
 import Link from 'next/link'
-import { revalidatePath } from 'next/cache'
+import { revalidatePath, revalidateTag } from 'next/cache'
 import { notFound } from 'next/navigation'
 import { OrderStatus, PaymentMethod, Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { requireOrganizerProfile, buildEventWhereClause, canAccessEvent } from '@/lib/dashboard/organizer'
 import { OrderFilters } from '@/components/dashboard/OrderFilters'
 import { OrdersTable } from '@/components/dashboard/OrdersTable'
+import { BulkActionForm } from '@/components/dashboard/BulkActionForm'
 
 export const dynamic = 'force-dynamic'
 
@@ -37,6 +38,16 @@ export default async function EventOrdersPage({ params, searchParams }: PageProp
     select: {
       id: true,
       title: true,
+      ticketTypes: {
+        where: { isVisible: true },
+        select: {
+          name: true,
+          soldCount: true,
+          reservedCount: true,
+          maxCapacity: true,
+        },
+        orderBy: { sortOrder: 'asc' },
+      },
     },
   })
 
@@ -85,6 +96,12 @@ export default async function EventOrdersPage({ params, searchParams }: PageProp
       totalAmount: true,
       currency: true,
       createdAt: true,
+      discountCode: {
+        select: {
+          code: true,
+          discountType: true,
+        },
+      },
     },
     orderBy: {
       createdAt: 'desc',
@@ -99,21 +116,57 @@ export default async function EventOrdersPage({ params, searchParams }: PageProp
 
     const action = String(formData.get('bulkAction') || '')
 
-    if (action !== 'cancel_all_filtered') return
-
-    await prisma.order.updateMany({
-      where: {
-        eventId: id,
-        event: { id, deletedAt: null },
-        status: {
-          in: ['PENDING', 'PENDING_INVOICE'],
+    if (action === 'cancel_all_filtered') {
+      await prisma.order.updateMany({
+        where: {
+          eventId: id,
+          event: { id, deletedAt: null },
+          status: {
+            in: ['PENDING', 'PENDING_INVOICE'],
+          },
         },
-      },
-      data: {
-        status: 'CANCELLED',
-        cancelledAt: new Date(),
-      },
-    })
+        data: {
+          status: 'CANCELLED',
+          cancelledAt: new Date(),
+        },
+      })
+    } else if (action === 'delete_all_filtered') {
+      const ordersToDelete = await prisma.order.findMany({
+        where: orderWhere,
+        select: {
+          id: true,
+          status: true,
+          items: { select: { ticketTypeId: true, quantity: true } },
+        },
+      })
+
+      await prisma.$transaction(async (tx) => {
+        for (const order of ordersToDelete) {
+          for (const item of order.items) {
+            if (order.status === 'PAID') {
+              await tx.ticketType.update({
+                where: { id: item.ticketTypeId },
+                data: { soldCount: { decrement: item.quantity } },
+              })
+            } else if (order.status === 'PENDING' || order.status === 'PENDING_INVOICE') {
+              await tx.ticketType.update({
+                where: { id: item.ticketTypeId },
+                data: { reservedCount: { decrement: item.quantity } },
+              })
+            }
+          }
+        }
+
+        await tx.order.deleteMany({
+          where: { id: { in: ordersToDelete.map((o) => o.id) } },
+        })
+      })
+
+      revalidateTag('event-analytics', 'max')
+      revalidateTag('dashboard-analytics', 'max')
+    } else {
+      return
+    }
 
     revalidatePath(`/dashboard/events/${id}/orders`)
   }
@@ -136,6 +189,40 @@ export default async function EventOrdersPage({ params, searchParams }: PageProp
         <span>/</span>
         <span className="text-gray-900">Orders</span>
       </nav>
+
+      {/* Ticket stats */}
+      {event.ticketTypes.length > 0 && (() => {
+        const totalSold = event.ticketTypes.reduce((sum, tt) => sum + tt.soldCount, 0)
+        const totalCapacity = event.ticketTypes.every(tt => tt.maxCapacity !== null)
+          ? event.ticketTypes.reduce((sum, tt) => sum + (tt.maxCapacity ?? 0), 0)
+          : null
+        return (
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <div className="rounded-xl border border-gray-200 bg-white p-4">
+              <p className="text-xs font-medium text-gray-500">Tickets Sold</p>
+              <p className="mt-1 text-xl font-semibold text-gray-900">
+                {totalSold}{totalCapacity !== null ? ` / ${totalCapacity}` : ''}
+              </p>
+            </div>
+            <div className="rounded-xl border border-gray-200 bg-white p-4">
+              <p className="text-xs font-medium text-gray-500">Orders</p>
+              <p className="mt-1 text-xl font-semibold text-gray-900">{orders.length}</p>
+            </div>
+            {event.ticketTypes.map((tt) => (
+              <div key={tt.name} className="rounded-xl border border-gray-200 bg-white p-4">
+                <p className="text-xs font-medium text-gray-500">{tt.name}</p>
+                <p className="mt-1 text-xl font-semibold text-gray-900">
+                  {tt.soldCount}{tt.maxCapacity !== null ? ` / ${tt.maxCapacity}` : ''}
+                  <span className="ml-1 text-sm font-normal text-gray-500">sold</span>
+                </p>
+                {tt.reservedCount > 0 && (
+                  <p className="text-xs text-amber-600">{tt.reservedCount} reserved</p>
+                )}
+              </div>
+            ))}
+          </div>
+        )
+      })()}
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
@@ -160,21 +247,17 @@ export default async function EventOrdersPage({ params, searchParams }: PageProp
 
       <OrderFilters initial={{ search, status: status || '', paymentMethod: paymentMethod || '', dateFrom, dateTo }} />
 
-      <form action={applyBulkAction} className="rounded-xl border border-gray-200 bg-white p-4">
-        <div className="flex items-center gap-3">
-          <select name="bulkAction" className="h-10 rounded-md border border-gray-300 px-3 text-sm">
-            <option value="">Bulk actions</option>
-            <option value="cancel_all_filtered">Cancel all pending orders</option>
-          </select>
-          <button type="submit" className="h-10 rounded-md bg-[#5C8BD9] px-4 text-sm font-medium text-white">Apply</button>
-        </div>
-      </form>
+      <BulkActionForm action={applyBulkAction} orderCount={orders.length} />
 
       <OrdersTable
         eventId={event.id}
         orders={orders.map((order) => ({
           ...order,
           totalAmount: Number(order.totalAmount.toString()),
+          discountCode: order.discountCode ? {
+            code: order.discountCode.code,
+            discountType: order.discountCode.discountType,
+          } : null,
         }))}
       />
     </div>

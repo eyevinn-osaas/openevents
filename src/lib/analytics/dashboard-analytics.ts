@@ -27,6 +27,7 @@ async function fetchDashboardAnalytics(): Promise<DashboardAnalytics> {
       where: {
         event: eventWhere,
         status: { in: revenueStatuses },
+        paymentMethod: 'PAYPAL',
       },
       _sum: { totalAmount: true },
       orderBy: { _sum: { totalAmount: 'desc' } },
@@ -43,6 +44,7 @@ async function fetchDashboardAnalytics(): Promise<DashboardAnalytics> {
       },
       select: {
         totalAmount: true,
+        paymentMethod: true,
         createdAt: true,
         paidAt: true,
         items: { select: { quantity: true } },
@@ -102,7 +104,9 @@ async function fetchDashboardAnalytics(): Promise<DashboardAnalytics> {
     const dayStats = dailyMap.get(day)
     if (dayStats) {
       const orderTickets = o.items.reduce((sum, item) => sum + item.quantity, 0)
-      dayStats.revenue += Number(o.totalAmount.toString())
+      if (o.paymentMethod === 'PAYPAL') {
+        dayStats.revenue += Number(o.totalAmount.toString())
+      }
       dayStats.ticketsSold += orderTickets
     }
   }
