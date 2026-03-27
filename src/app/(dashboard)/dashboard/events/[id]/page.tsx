@@ -41,6 +41,7 @@ export default async function EventDetailDashboardPage({ params }: PageProps) {
         id: true,
         orderNumber: true,
         status: true,
+        paymentMethod: true,
         totalAmount: true,
         currency: true,
         buyerEmail: true,

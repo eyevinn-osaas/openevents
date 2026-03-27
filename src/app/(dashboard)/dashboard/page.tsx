@@ -40,6 +40,7 @@ export default async function DashboardHomePage() {
           where: {
             ...orderWhere,
             status: { in: revenueStatuses },
+            paymentMethod: 'PAYPAL',
           },
           _sum: { totalAmount: true },
         }),
@@ -58,6 +59,7 @@ export default async function DashboardHomePage() {
             id: true,
             orderNumber: true,
             status: true,
+            paymentMethod: true,
             totalAmount: true,
             currency: true,
             buyerEmail: true,

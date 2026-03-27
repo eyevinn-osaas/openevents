@@ -43,6 +43,7 @@ export async function GET(_request: Request, context: RouteContext) {
         where: {
           eventId: id,
           status: { in: revenueStatuses },
+          paymentMethod: 'PAYPAL',
         },
         _sum: {
           totalAmount: true,
@@ -57,6 +58,7 @@ export async function GET(_request: Request, context: RouteContext) {
           order: {
             eventId: id,
             status: { in: revenueStatuses },
+            paymentMethod: 'PAYPAL',
           },
         },
         _sum: {
@@ -73,13 +75,12 @@ export async function GET(_request: Request, context: RouteContext) {
 
     const byTicketType = event.ticketTypes.map((ticketType) => {
       const sales = paidItemGroups.find((group) => group.ticketTypeId === ticketType.id)
-      const sold = sales?._sum?.quantity ?? 0
       const revenue = Number(sales?._sum?.totalPrice?.toString() ?? '0')
 
       return {
         ticketTypeId: ticketType.id,
         name: ticketType.name,
-        sold,
+        sold: ticketType.soldCount,
         revenue,
         remaining: ticketType.maxCapacity === null ? null : Math.max(ticketType.maxCapacity - ticketType.soldCount, 0),
       }
